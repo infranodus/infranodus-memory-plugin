@@ -1,0 +1,8 @@
+infranodus-app /Users/dmt/.claude/projects/-Users-dmt-Software-infranodus-app/b2f7669e-2d87-4a92-ba80-d08259773ade.jsonl
+infranodus-app /Users/dmt/.claude/projects/-Users-dmt-Software-infranodus-app/37bcfc48-d6f5-488f-aca0-7eae39fb303d.jsonl
+infranodus-web /Users/dmt/.claude/projects/-Users-dmt-Software-infranodus-web/990a2973-5378-4a32-8ef5-7bf42c10c70e.jsonl
+legal-help /Users/dmt/.claude/projects/-Users-dmt-Software-legal-help/643922b5-80ac-40d4-9c04-ea0f2d865cad.jsonl
+InfraNodus-Skills /Users/dmt/.claude/projects/-Users-dmt-Software-Skills-InfraNodus-Skills/44e55d12-2f05-4c7e-aa35-10ecf027e626.jsonl
+infranodus-ai-frontend /Users/dmt/.claude/projects/-Users-dmt-Software-infranodus-ai-frontend/ae9a754d-a2da-4a7b-9161-7b94dde50e24.jsonl
+infranodus-apis /Users/dmt/.claude/projects/-Users-dmt-Software-infranodus-apis/8772ba78-8672-4a19-aca7-d7940a89b284.jsonl
+mcp-server-infranodus /Users/dmt/.claude/projects/-Users-dmt-Software-mcp-server-infranodus/95a71051-0562-4606-8395-98c9ef2f7a95.jsonl

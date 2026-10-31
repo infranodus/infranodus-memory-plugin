@@ -45,6 +45,13 @@ has to be good before step 5 ships. Needs no new code.
 - [ ] Hand-check: no facts about the user in learnings, no trivia, decisions
       come with reasons, no "today I did X" diary lines
 - **Done when** most statements are worth keeping. If not, fix the prompt now
+- [x] First run done 2026-10-31: 8 sessions × trimmed/full × Haiku/Sonnet.
+      Results in [`experiments/extraction/REPORT.md`](../experiments/extraction/REPORT.md):
+      most statements worth keeping; trimmed finds most key learnings at a
+      tenth of the cost but misses how-to knowledge from successful commands
+- [ ] Second run: add "commands run" to the trimmed excerpt; per-statement
+      `project` field; rules against snapshot facts and environment traps;
+      structured output. Then record the Q2 decision in the design
 
 ## Step 3: phase 1, one implementation (`infranodus-app`, `mcp-server-infranodus`)
 
