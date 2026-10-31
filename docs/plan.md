@@ -25,9 +25,14 @@ Paths are relative to this repo's root and assume the repos sit side by side in
 
 - [ ] Commit the design draft and the task lists in `mcp-server-infranodus`, `Skills/InfraNodus-Skills` and this repo
 - [ ] Publish this repo on GitHub
-- [ ] Answer the open questions that shape the API: Q1 (how recall finds the
-      topic graphs linked to a project) and Q2 (pre-trimming the excerpt to
-      about 6k tokens). The rest can wait
+- [x] Q1 decided (2026-10-31): **v1 recall uses only the project's learnings
+      graph** (plus personal memory once phase 4 adds it). Topic graphs are
+      not linked to projects and not searched by recall; the plugin doesn't
+      write to them either. Topic memory stays available on demand through the
+      MCP memory tools. Linking topics to projects (a `linkedTopics` marker in
+      `learn-<project>`) can be added later without changing anything else
+- [ ] Answer Q2 (pre-trimming the excerpt to about 6k tokens) before step 5.
+      The other open questions can wait
 
 ## Step 2: test extraction quality first (alongside step 3)
 
