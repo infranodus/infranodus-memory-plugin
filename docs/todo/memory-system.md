@@ -48,7 +48,7 @@ Memory must never slow Claude down; see "Performance: never slow the agent down"
 - [ ] Record nothing when the session's recall returned `enabled: false`, when the path matches `exclude_paths`, or in the home directory, temp folders, or a folder that is neither a git repo nor has a project marker
 - [ ] Redact before writing to the queue: API keys and tokens (common prefixes and high-entropy strings), private key blocks, `.env` contents; drop text inside `<private>…</private>`
 - [ ] Off switches checked first in every hook: `INFRANODUS_MEMORY_DISABLE=1`, `INFRANODUS_MEMORY_DISABLE_CAPTURE=1` (recall only)
-- [ ] `PreCompact` and `SessionEnd`: pre-trim the queue (last turns, failures, final answers, at most about 6k tokens), then start a detached worker that posts to `/api/v1/ingest` with the `session_id`; delete the queue on success
+- [ ] `PreCompact` and `SessionEnd`: pre-trim the queue (last turns, failures, final answers, files edited, at most about 6k tokens, plus a list of successful shell commands up to about 1.5k tokens; reference implementation `experiments/extraction/trim.py`, mode `trimmed2`), then start a detached worker that posts to `/api/v1/ingest` with the `session_id`; delete the queue on success
 - [ ] Recover stuck queues on the next `SessionStart`: a queue whose worker died is retried
 - [ ] `/memory forget-last` → `/api/v1/memory/forget` (deletes the last session's statements by their `session-<id>` category)
 - [ ] Show the recall's `saved` line ("Saved 4 learnings from your last session") and `quotaPaused` notice

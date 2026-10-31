@@ -31,8 +31,9 @@ Paths are relative to this repo's root and assume the repos sit side by side in
       write to them either. Topic memory stays available on demand through the
       MCP memory tools. Linking topics to projects (a `linkedTopics` marker in
       `learn-<project>`) can be added later without changing anything else
-- [ ] Answer Q2 (pre-trimming the excerpt to about 6k tokens) before step 5.
-      The other open questions can wait
+- [x] Q2 decided (2026-10-31, from step 2): the hook pre-trims to about 6k
+      tokens plus a list of successful commands. The other open questions
+      can wait
 
 ## Step 2: test extraction quality first (alongside step 3)
 
@@ -49,9 +50,10 @@ has to be good before step 5 ships. Needs no new code.
       Results in [`experiments/extraction/REPORT.md`](../experiments/extraction/REPORT.md):
       most statements worth keeping; trimmed finds most key learnings at a
       tenth of the cost but misses how-to knowledge from successful commands
-- [ ] Second run: add "commands run" to the trimmed excerpt; per-statement
-      `project` field; rules against snapshot facts and environment traps;
-      structured output. Then record the Q2 decision in the design
+- [x] Second run done 2026-10-31: commands list, `project` field, snapshot and
+      environment rules, structured output. All four fixes work; a small
+      model is enough with the v2 prompt. Q2 decided and recorded in the
+      design (trimmed + commands list)
 
 ## Step 3: phase 1, one implementation (`infranodus-app`, `mcp-server-infranodus`)
 
@@ -85,7 +87,9 @@ has to be good before step 5 ships. Needs no new code.
 
 - [ ] `infranodus-app`:
   - `/ingest`: returns 202 at once, extracts in the background, a retried
-    upload with the same `sessionId` writes nothing twice
+    upload with the same `sessionId` writes nothing twice; uses the v2 prompt
+    and schema from `experiments/extraction/`; default model picked by
+    re-running the 8 test sessions through it
   - creates the learnings graph on the first ingest that yields statements;
     tags each statement with `session-<id>`
   - `/memory/forget`, quota pause, inbox for review mode

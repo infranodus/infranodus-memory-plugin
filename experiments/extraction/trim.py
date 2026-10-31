@@ -6,13 +6,16 @@ Two modes, for the step-2 extraction test (docs/plan.md):
   trimmed  What the plugin's capture hooks would record, cut to a budget
            (default ~6k tokens): user prompts, the agent's final answer of each
            turn, failed tool calls, and the list of files edited.
+  trimmed2 trimmed plus a COMMANDS RUN list: successful shell commands,
+           deduplicated, read-only exploration (ls, cat, grep…) left out,
+           each clipped to 150 chars, up to ~1.5k tokens (second run).
   full     Everything readable in order (prompts, all agent text, every tool
            call and result, each result truncated), cut to a large budget
            (default ~100k tokens) from the start, keeping the end.
 
 Secrets are redacted in both modes. Standard library only.
 
-Usage: trim.py <transcript.jsonl> {trimmed|full} [--tokens N]
+Usage: trim.py <transcript.jsonl> {trimmed|trimmed2|full} [--tokens N]
 """
 import argparse
 import json
@@ -96,6 +99,52 @@ def tool_summary(name, inp):
     return f"{name}({clip(json.dumps(inp)[:200], 200)})"
 
 
+# First words of shell commands that only look around; they carry no how-to.
+READ_ONLY = {"ls", "cat", "head", "tail", "grep", "rg", "find", "pwd", "wc", "echo", "sed", "awk", "which",
+             "file", "stat", "tree", "less", "diff", "sort", "uniq", "jq", "true", "sleep",
+             "mv", "rm", "cp", "mkdir", "touch", "chmod", "export", "source", "open"}
+READ_ONLY_GIT = ("git status", "git diff", "git log", "git show", "git branch", "git rev-parse", "git remote")
+# Leading "cd dir &&" or "VAR=value;" that only sets up the real command.
+SETUP_PREFIX = re.compile(r"^\s*(cd\s+\S+|[A-Z_][A-Z0-9_]*=\S+)\s*(&&|;|\n)\s*")
+
+
+def command_key(cmd):
+    if "<<" in cmd:  # heredocs are file-editing or throwaway scripts, not how-to
+        return None
+    prev = None
+    while prev != cmd:
+        prev, cmd = cmd, SETUP_PREFIX.sub("", cmd.strip())
+    first = cmd.split()[0] if cmd.split() else ""
+    if first in READ_ONLY or cmd.startswith(READ_ONLY_GIT):
+        return None
+    return " ".join(cmd.split())
+
+
+def commands_run(path, budget_chars):
+    calls, seen, out = {}, set(), []
+    for kind, data in events(path):
+        if kind == "tool" and data[1] == "Bash":
+            calls[data[0]] = data[2].get("command", "")
+        elif kind == "result" and data[0] in calls and not data[1]:
+            key = command_key(calls.pop(data[0]))
+            if key and key not in seen:
+                seen.add(key)
+                out.append(clip(key, 150))
+    kept, size = [], 0
+    for c in reversed(out):  # keep the most recent that fit
+        if size + len(c) + 3 > budget_chars:
+            break
+        kept.append(c)
+        size += len(c) + 3
+    return list(reversed(kept))
+
+
+def trimmed2(path, budget_chars):
+    cmds = commands_run(path, 1500 * CHARS_PER_TOKEN)
+    block = "COMMANDS RUN (succeeded):\n" + ("\n".join(f"- {c}" for c in cmds) or "none") + "\n\n"
+    return block + trimmed(path, budget_chars)
+
+
 def trimmed(path, budget_chars):
     turns, files, calls = [], [], {}
     cur = None
@@ -157,11 +206,11 @@ def full(path, budget_chars):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("transcript")
-    ap.add_argument("mode", choices=["trimmed", "full"])
+    ap.add_argument("mode", choices=["trimmed", "trimmed2", "full"])
     ap.add_argument("--tokens", type=int)
     a = ap.parse_args()
-    tokens = a.tokens or (6000 if a.mode == "trimmed" else 100000)
-    fn = trimmed if a.mode == "trimmed" else full
+    tokens = a.tokens or (100000 if a.mode == "full" else 6000)
+    fn = {"trimmed": trimmed, "trimmed2": trimmed2, "full": full}[a.mode]
     sys.stdout.write(redact(fn(a.transcript, tokens * CHARS_PER_TOKEN)))
 
 

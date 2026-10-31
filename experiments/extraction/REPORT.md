@@ -1,5 +1,10 @@
 # Step 2: extraction test results (2026-10-31)
 
+Two runs. Run 1 compared trimmed vs full excerpts and two models. Run 2
+applied the fixes from run 1 and is what the design now uses (see
+"Run 2" at the end). Outcome: **trimmed excerpt + commands list, the v2 prompt
+with structured output, and a small model are enough.**
+
 **Question:** can one AI call turn a coding session into memory worth keeping,
 with no human review (auto mode)? And should the hook send a trimmed excerpt
 (~6k tokens) or the full session?
@@ -115,9 +120,84 @@ project and is correctly attributed:
 
 With fixes 1–3 most of the drops become either correctly routed or filtered.
 
-## Next
+# Run 2 (2026-10-31): fixes applied
 
-1. Apply fixes 1–4 to the prompt and add "commands run" to `trim.py`.
-2. Re-run on the same 8 sessions (Sonnet, trimmed) and compare.
-3. If it holds, record in the design: trimmed excerpt + commands run, a
-   Sonnet-class model, structured output, the `project` field per statement.
+## What changed
+
+- `trim.py` mode `trimmed2`: the trimmed excerpt plus a **COMMANDS RUN** list
+  of successful shell commands, deduplicated, at most ~1.5k tokens. Left out:
+  read-only commands (`ls`, `cat`, `grep`, `git status`…), heredocs (they are
+  file-editing scripts) and `cd dir &&` / `VAR=x;` prefixes.
+- `ingest-prompt-v2.md`: a `project` field per statement; a rule against
+  snapshots (versions, release state, branches, committed/uncommitted,
+  "currently", counts); a `personal`/`environment` type for facts about the
+  user's machine or agent; at least one `[[wikilink]]`; no statements about a
+  tool used once in the session.
+- `schema-v2.json` passed with `--json-schema` (structured output).
+- Same 8 sessions, trimmed2 only, Haiku and Sonnet. Results in `out2/`
+  (gitignored). Run with
+  `PROMPT=ingest-prompt-v2.md OUT=out2 SCHEMA=schema-v2.json ./run.sh`,
+  then `python3 collect.py out2`.
+
+## Numbers
+
+| model | statements | to another repo | personal | avg input tokens | cost per session | avg time |
+|---|---:|---:|---:|---:|---:|---:|
+| haiku | 77 | 26 | 5 | ~12.6k* | $0.004 | 18 s |
+| sonnet | 51 | 16 | 1 | ~10.5k* | $0.041 | 7 s |
+
+\* Includes the longer prompt and cached system tokens; the excerpts are
+1.8–28k chars (about 0.5–7k tokens).
+
+## Did the fixes work?
+
+1. **Other repos: fixed.** The ai-frontend session's facts about
+   `infranodus-app/lib/ai.js` now carry `project: infranodus-app` (13 of 15
+   with Haiku), the mcp-server session's GraphRAG findings go to
+   infranodus-app, and pricing-table facts go to infranodus-web and
+   keywordgraph-web. Statements about the widget's own code stayed in
+   ai-frontend. No invented project names.
+2. **Snapshots: mostly fixed.** Gone: "currently gpt-6.1-terra", "uncommitted
+   on branch…", "working tree holds…". A few numbers remain, mostly from
+   Sonnet ("should pass 87/87", "default tag v1.7.3", "~19k users", "all 15
+   pages"). Acceptable; supersession handles the rest.
+3. **Environment: fixed.** "auto mode blocks `gh pr merge`" and "the shell's
+   cwd resets" came out as `personal/environment`, none in learnings.
+4. **Malformed output: fixed.** 16 of 16 runs returned valid statements
+   through the schema. One leftover: Haiku sometimes uses type `fact` with
+   kind `learning`; tighten the schema so types depend on kind.
+
+**Commands list:** it brought back how-to knowledge trimmed lost in run 1:
+"starting the server with `pnpm run dev` applies pending migrations through
+`runMigrations`" (legal-help), "run `scripts/recomputeProfiles.js` in dry-run
+mode", "run `npm run build` so the challenger arm's generated nav updates",
+"React views only change after `npm run webpack:production`".
+
+## Model: the result flipped
+
+With the v2 prompt **Sonnet became too strict**: 51 statements against 73 in
+run 1, 1 statement for legal-help (Haiku: 10 good ones) and 2 for the
+mcp-server session (Haiku: 8, all correct). **Haiku** produced more, with
+equal quality per statement, and the facts I checked against the code were
+right: FREE file cap 500 KB and Cloud PDF cap 2 MB
+(`lib/planEntitlements.js`, the fact it got wrong in run 1), the
+`fileSize > fileSize >` typo in `routes/imports/csv.js`, `runMigrations` in
+`apps/server/src/db.ts`, `REMINDER_CHECK_INTERVAL_SEC` default 300.
+
+Precision (hand-checked, my judgement): Haiku about 9 in 10 kept; Sonnet
+similar per statement but misses a lot. Remaining drops: statements about the
+Understand-Anything tool in infranodus-apis (rule 7 not followed by either
+model), a few numbers.
+
+**Recommendation:** a small, cheap model with the v2 prompt, about $0.004 per
+session. In `/ingest` that means trying a small model from InfraNodus's list
+(e.g. gpt-5.4-mini) against claude-sonnet-5 on these 8 sessions before
+picking the default. That check needs the endpoint, so it moves to step 5.
+
+## Decisions recorded in the design (Q2 closed)
+
+- The hook pre-trims to ~6k tokens and adds the commands list (~1.5k tokens).
+- `/ingest` uses structured output; each statement has `project`, `kind`,
+  `type`; other-repo statements go to that repo's graph only if memory is on
+  there; `personal` waits for phase 4.
+- The default model is chosen from InfraNodus's list once `/ingest` exists.
