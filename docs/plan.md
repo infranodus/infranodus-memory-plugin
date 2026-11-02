@@ -129,21 +129,24 @@ app todo).
 
 ## Step 5: phase 3, the full cycle
 
-- [ ] `infranodus-app`:
-  - `/ingest`: returns 202 at once, extracts in the background, a retried
-    upload with the same `sessionId` writes nothing twice; uses the v2 prompt
-    and schema from `experiments/extraction/`; default model picked by
-    re-running the 8 test sessions through it; supersession of updated
-    statements
-  - creates `learn-<project>` as a `MEMORY` graph on the first ingest that
-    yields statements; tags each statement with `session-<id>`; `mode` from
-    the request (`auto`, or `review` into the inbox)
-  - `/memory/forget`, quota pause, inbox for review mode
-- [ ] This repo:
-  - capture hooks writing to `~/.infranodus/queue/`, with redaction and
-    exclusion guards
-  - background ingest worker on `PreCompact` and `SessionEnd`
-  - `/infranodus-memory:forget-last` and `/infranodus-memory:review`
+Built 2026-11-02 and checked end to end with real Claude Code sessions against
+a test instance of the app: a session's end uploads it, the app saves the
+learnings, the next session recalls them with a "saved" line, and
+`/infranodus-memory:forget-last` undoes it. The upload reads Claude Code's
+transcript at `PreCompact`/`SessionEnd` instead of capture hooks (see the
+plugin todo).
+
+- [x] `infranodus-app`: `/ingest` (202 at once, background extraction with
+      `claude-haiku-5-5` and the v2 prompt plus supersession, retried uploads
+      write nothing twice, graph created on the first useful session,
+      `session-<id>` tags), `saved` in `/recall`, `/memory/forget`
+- [x] This repo: upload worker on `PreCompact` and `SessionEnd` (reads the
+      transcript; redaction, exclusions, retry queue),
+      `/infranodus-memory:forget-last`, the "saved" line, `exclude_paths`
+- [ ] Default model: re-run the 8 test sessions through `/ingest` and compare
+      `claude-haiku-5-5` with a model from InfraNodus's list (e.g.
+      gpt-5.4-mini)
+- [ ] Quota pause notice; review mode (inbox, `/infranodus-memory:review`)
 - [ ] `mcp-server-infranodus`: `review_memory` tool and `inboxCount`
 - [ ] Before release: the skills README's "What gets uploaded and where" table
       and the InfraNodus privacy policy describe the default-on behaviour

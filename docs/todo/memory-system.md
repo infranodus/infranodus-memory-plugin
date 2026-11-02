@@ -44,17 +44,20 @@ Memory must never slow Claude down; see "Performance: never slow the agent down"
 - [ ] Version the plugin in `plugin.json` and tag releases; the skills marketplace entry points at this repo
 - [ ] Release workflow: decide whether to build a zip (hooks don't work in Claude web; probably skip it)
 
-## Phase 3: capture and ingest
+## Phase 3: session upload and forget
 
-- [ ] Add `PostToolUse`, `PostToolUseFailure`, `Stop` hooks: append to a local queue in `~/.infranodus/queue/<session>.jsonl`, with no network calls and a 3 s timeout
-- [ ] Record nothing when the project is in the `off` list, when the path matches `exclude_paths`, or in the home directory, temp folders, or a folder that is neither a git repo nor has a project marker
-- [ ] Redact before writing to the queue: API keys and tokens (common prefixes and high-entropy strings), private key blocks, `.env` contents; drop text inside `<private>…</private>`
-- [ ] Off switches checked first in every hook: `INFRANODUS_MEMORY_DISABLE=1`, `INFRANODUS_MEMORY_DISABLE_CAPTURE=1` (recall only)
-- [ ] `PreCompact` and `SessionEnd`: pre-trim the queue (last turns, failures, final answers, files edited, at most about 6k tokens, plus a list of successful shell commands up to about 1.5k tokens; reference implementation `experiments/extraction/trim.py`, mode `trimmed2`), then start a detached worker that posts to `/api/v1/ingest` with the `session_id` and `mode` from `memory.json`; delete the queue on success
-- [ ] Recover stuck queues on the next `SessionStart`: a queue whose worker died is retried
-- [ ] `/infranodus-memory:forget-last` → `/api/v1/memory/forget` (deletes the last session's statements by their `session-<id>` category)
-- [ ] Show the recall's `saved` line ("Saved 4 learnings from your last session") and `quotaPaused` notice
-- [ ] `skills/memory/SKILL.md`: memory is on from install; `/infranodus-memory:off`/`on`, `/infranodus-memory:forget-last`, `exclude_paths` and `<private>` tags; `/infranodus-memory:review` for users in `review` mode; how to enable topic or personal memory
+> Built 2026-11-02 (not released), checked with real Claude Code sessions against a test instance of the app. **Changed from the design:** no capture hooks and no capture queue. Claude Code already writes the session to a transcript, and `PreCompact`/`SessionEnd` give its path, so the upload reads it then. That is exactly what step 2 tested (`trim.py` `trimmed2` on transcripts), needs no per-tool hook, and adds nothing to tool calls. Clients without a transcript (phase 5) will still need capture hooks.
+
+- [x] `PreCompact` and `SessionEnd`: `memory.py hook-flush` checks the off switches, the project and the key, starts a detached `ingest-worker` and returns (~5 ms)
+- [x] Worker: builds the excerpt (`hooks/excerpt.py`, the production `trimmed2`: commands run + trimmed turns, ~6k tokens, redacted) from the transcript lines after the last upload (`~/.infranodus/uploaded/<session>`), skips excerpts under 500 characters, posts to `/api/v1/ingest`; one worker per session at a time
+- [x] Failed uploads (network, 429, 5xx) go to `~/.infranodus/queue/` and are retried first by the next worker (kept 7 days)
+- [x] Record nothing when the project is in the `off` list, when the path matches `exclude_paths` (new optional setting), or in the home directory, temp folders, or a folder that is neither a git repo nor has a project marker
+- [x] Redaction: API keys and tokens (common prefixes and long tokens), private key blocks, `key=value` secrets; text inside `<private>…</private>` is dropped
+- [x] Off switches checked first: `INFRANODUS_MEMORY_DISABLE=1`, `INFRANODUS_MEMORY_DISABLE_CAPTURE=1` (recall only)
+- [x] `/infranodus-memory:forget-last` → `/api/v1/memory/forget`
+- [x] Show the recall's `saved` line once per session ("InfraNodus memory saved 3 learnings from your last session in <project> (/infranodus-memory:forget-last to undo)")
+- [ ] `quotaPaused` notice (a quota refusal is currently queued and retried silently)
+- [ ] Review mode (`mode` in `memory.json`, inbox, `/infranodus-memory:review`)
 
 ## Phase 5: hooks for other clients
 
@@ -76,7 +79,7 @@ See "Hooks for other clients" in the design doc.
 
 ## Tests
 
-- [ ] Hook unit tests: no key means no output and exit 0; a timeout means no output; only the first prompt per session triggers recall
+- [x] Hook unit tests: no key means no output and exit 0; a timeout means no output; only the first prompt per session triggers recall
 - [ ] Timing tests: each capture hook under 50 ms and each ingest hook under 100 ms on a long fixture session; recall gives up at 2 s against a slow mock server; a session with Claude Code and the plugin is not measurably slower than without it
-- [ ] Queue tests: nothing is written for a disabled or excluded project, the home directory or a non-project folder; secrets and `<private>` text are redacted; the queue is deleted after a successful ingest and kept after a failure
-- [ ] First-run line appears once per project; `/infranodus-memory:off` stops capture from the next event
+- [x] Upload tests: nothing is sent for a disabled or excluded project or a non-project folder; secrets are redacted; each upload covers only new lines; a failed upload is queued and retried
+- [x] First-run line appears once per project; `/infranodus-memory:off` stops recall and upload

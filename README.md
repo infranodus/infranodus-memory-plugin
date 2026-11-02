@@ -6,9 +6,7 @@ session it recalls what earlier sessions learned about the project; at the end
 of a session it saves new learnings. Because memory is a graph, recall can also
 say what the memory is missing.
 
-**Status:** recall works (phase 2, not released yet). Saving new learnings
-automatically comes next; until then, learnings are saved with the
-`add_project_learnings` MCP tool.
+**Status:** the full cycle works (saving and recall), not released yet.
 
 ## Install
 
@@ -27,6 +25,15 @@ is also listed in the InfraNodus skills marketplace.
   the project name to InfraNodus (`/api/v1/recall`) and gives Claude up to 5
   related learnings from the project's `learn-<project>` graph, plus at most one
   gap the memory doesn't cover. Later prompts send nothing.
+- **At the end of a session** (and before a compaction), it trims what
+  happened (your prompts, Claude's final answers, failed tool calls, files
+  edited, commands that worked; secrets and `<private>…</private>` text
+  removed) and sends it to InfraNodus (`/api/v1/ingest`), which extracts the
+  durable learnings into `learn-<project>`, creating it the first time. This
+  runs in the background and never delays exit or compaction.
+- **The next session** tells you once what was saved: "InfraNodus memory
+  saved 3 learnings from your last session (/infranodus-memory:forget-last to
+  undo)."
 - **The first time in a project**, it tells you once: "InfraNodus memory is on
   for `<project>` → graph link."
 - **It never slows Claude down:** a 2 s limit on the one call; on any error,
@@ -41,20 +48,26 @@ is also listed in the InfraNodus skills marketplace.
 | `/infranodus-memory:off` | Turn memory off for the current project on this machine: nothing is recalled or sent. The graph is kept |
 | `/infranodus-memory:on` | Turn it back on |
 | `/infranodus-memory:status` | Show the project name, whether memory is on, and whether the key is set |
+| `/infranodus-memory:forget-last` | Remove the learnings saved from the last session |
 
 They are namespaced, so they don't clash with Claude Code's own `/memory`.
-`INFRANODUS_MEMORY_DISABLE=1` turns everything off.
+`INFRANODUS_MEMORY_DISABLE=1` turns everything off;
+`INFRANODUS_MEMORY_DISABLE_CAPTURE=1` keeps recall but sends no sessions.
 
 ## Settings and local files
 
 - `api_key` (required): your InfraNodus API key, asked for at install and kept
   in your system's secure store. Change it later in `/plugin`.
 - `api_base` (optional): only for your own InfraNodus server.
+- `exclude_paths` (optional): folders where memory never runs, e.g.
+  `~/clients/*, ~/private`.
 - `~/.infranodus/memory.json`: the projects turned off, and the projects you
   were already told about. Kept outside the project so a setting is never
   committed for your teammates.
-- `~/.infranodus/sessions/`, `~/.infranodus/timings.log`: which sessions already
-  had their recall, and how long each hook run took.
+- `~/.infranodus/sessions/`, `~/.infranodus/uploaded/`: which sessions already
+  had their recall, and how far each was uploaded.
+- `~/.infranodus/queue/`: uploads that failed, retried later (kept 7 days).
+- `~/.infranodus/timings.log`: how long each hook run took.
 
 ## Development
 

@@ -4,7 +4,12 @@
 Standard library only, so it starts fast and needs nothing installed.
 
     memory.py hook-prompt     UserPromptSubmit hook (stdin: the hook JSON)
-    memory.py off|on|status   the plugin's commands, for the project in cwd
+    memory.py hook-flush      PreCompact / SessionEnd hook (stdin: the hook
+                              JSON): starts the upload worker and returns
+    memory.py ingest-worker   (detached) trims the new part of the session,
+                              uploads it to /api/v1/ingest, retries the queue
+    memory.py off|on|status|forget-last
+                              the plugin's commands, for the project in cwd
 
 The hook never slows Claude down or gets in its way (design doc, "Performance:
 never slow the agent down"): it does work only on the first prompt of a
@@ -12,8 +17,11 @@ session, calls /api/v1/recall once with a 2 s timeout, and on any failure
 prints nothing and exits 0.
 
 Local state lives in ~/.infranodus/ (design doc, "Where memory state lives"):
-    memory.json     {"off": [projects], "told": [projects], "keyWarned": bool}
+    memory.json     {"off": [projects], "told": [projects], "keyWarned": bool,
+                     "reported": {project: last session reported as saved}}
     sessions/<id>   one empty file per session that already had its recall
+    uploaded/<id>   the transcript line up to which the session was uploaded
+    queue/*.json    uploads that failed, retried by the next worker
     timings.log     one line per hook run, rotated
 The server stores no on/off state: a project listed in "off" is skipped here
 before anything is sent.
@@ -27,6 +35,10 @@ import time
 CLIENT = "claude-code"
 DEFAULT_API_BASE = "https://infranodus.com/api/v1"
 RECALL_TIMEOUT_S = 2.0
+INGEST_TIMEOUT_S = 30.0
+MIN_EXCERPT_CHARS = 500  # less than this carries nothing worth an AI call
+QUEUE_MAX_AGE_S = 7 * 24 * 3600
+QUEUE_MAX_ITEMS = 20
 SESSION_MARKER_MAX_AGE_S = 7 * 24 * 3600
 TIMINGS_MAX_BYTES = 256 * 1024
 PROJECT_MARKERS = (
@@ -199,6 +211,35 @@ def project_for(cwd):
     return None
 
 
+def excluded(cwd):
+    """True when cwd matches the `exclude_paths` setting (globs separated by
+    commas or new lines, ~ allowed): nothing is recalled or sent there."""
+    raw = os.environ.get("CLAUDE_PLUGIN_OPTION_EXCLUDE_PATHS", "")
+    if not raw.strip() or not cwd:
+        return False
+    import fnmatch
+
+    real = os.path.realpath(cwd)
+    for pattern in raw.replace("\n", ",").split(","):
+        pattern = pattern.strip()
+        if not pattern:
+            continue
+        pattern = os.path.expanduser(pattern).rstrip("/")
+        if fnmatch.fnmatch(real, pattern) or fnmatch.fnmatch(real, pattern + "/*"):
+            return True
+    return False
+
+
+def active_project(cwd, settings):
+    """The project to work for, or None when memory must not run here."""
+    if os.environ.get("INFRANODUS_MEMORY_DISABLE") == "1" or excluded(cwd):
+        return None
+    project = project_for(cwd)
+    if not project or listed(settings, "off", project):
+        return None
+    return project
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -245,13 +286,9 @@ def post(base, key, path, body, timeout):
 
 def hook_prompt(event):
     """Returns the hook's JSON output (dict) or None for no output."""
-    if os.environ.get("INFRANODUS_MEMORY_DISABLE") == "1":
-        return None
-    project = project_for(event.get("cwd") or os.getcwd())
-    if not project:
-        return None
     settings = load_settings()
-    if listed(settings, "off", project):
+    project = active_project(event.get("cwd") or os.getcwd(), settings)
+    if not project:
         return None
     if not first_prompt_of_session(event.get("session_id")):
         return None
@@ -289,16 +326,172 @@ def hook_prompt(event):
             "hookEventName": "UserPromptSubmit",
             "additionalContext": block,
         }
+    lines = []
     if not listed(settings, "told", project):
         set_listed(settings, "told", project, True)
-        save_settings(settings)
         url = body.get("graphUrl") or ""
-        output["systemMessage"] = (
+        lines.append(
             "InfraNodus memory is on for %s%s. "
             "/infranodus-memory:off to stop for this project."
             % (project, (" → " + url) if url else "")
         )
+    saved = body.get("saved") or {}
+    reported = settings.setdefault("reported", {})
+    if saved.get("sessionId") and saved.get("count") and reported.get(project) != saved["sessionId"]:
+        reported[project] = saved["sessionId"]
+        lines.append(
+            "InfraNodus memory saved %d learning%s from your last session in %s "
+            "(/infranodus-memory:forget-last to undo)."
+            % (saved["count"], "" if saved["count"] == 1 else "s", project)
+        )
+    if lines:
+        save_settings(settings)
+        output["systemMessage"] = " ".join(lines)
     return output or None
+
+
+# ---------------------------------------------------------------------------
+# Hook: session upload (PreCompact, SessionEnd)
+# ---------------------------------------------------------------------------
+
+
+def hook_flush(event):
+    """Starts the upload in a detached process and returns at once, so
+    compaction and exit never wait on it."""
+    if os.environ.get("INFRANODUS_MEMORY_DISABLE_CAPTURE") == "1":
+        return
+    cwd = event.get("cwd") or os.getcwd()
+    if not active_project(cwd, load_settings()) or not api_settings()[0]:
+        return
+    transcript = event.get("transcript_path") or ""
+    if not transcript or not os.path.isfile(transcript):
+        return
+    import subprocess
+
+    subprocess.Popen(
+        [
+            sys.executable,
+            os.path.abspath(__file__),
+            "ingest-worker",
+            transcript,
+            event.get("session_id") or "",
+            cwd,
+            event.get("hook_event_name") or "",
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=os.environ.copy(),
+    )
+
+
+def _safe(session_id):
+    return "".join(c for c in session_id if c.isalnum() or c in "-_")[:80]
+
+
+def _queue_dir():
+    return os.path.join(home_dir(), "queue")
+
+
+def _upload(base, key, item):
+    """'done', 'retry' (network, 429, 5xx) or 'drop' (refused for good)."""
+    try:
+        status, _ = post(
+            base,
+            key,
+            "/ingest",
+            {
+                "project": item["project"],
+                "excerpt": item["excerpt"],
+                "sessionId": item["sessionId"],
+                "client": CLIENT,
+            },
+            INGEST_TIMEOUT_S,
+        )
+    except Exception:
+        return "retry"
+    if status in (200, 202):
+        return "done"
+    if status == 429 or status >= 500:
+        return "retry"
+    return "drop"
+
+
+def _retry_queue(base, key):
+    folder = _queue_dir()
+    if not os.path.isdir(folder):
+        return
+    cutoff = time.time() - QUEUE_MAX_AGE_S
+    for name in sorted(os.listdir(folder))[:QUEUE_MAX_ITEMS]:
+        path = os.path.join(folder, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                continue
+            with open(path, encoding="utf-8") as f:
+                item = json.load(f)
+            outcome = _upload(base, key, item)
+            if outcome == "retry":
+                return  # still failing: leave the rest for later
+            os.remove(path)
+        except Exception:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def ingest_worker(transcript, session_id, cwd, event_name):
+    """Upload the part of the session not uploaded yet. Returns an outcome
+    word for the timings log."""
+    settings = load_settings()
+    project = active_project(cwd, settings)
+    key, base = api_settings()
+    if not project or not key or not session_id:
+        return "skipped"
+    _retry_queue(base, key)
+
+    folder = os.path.join(home_dir(), "uploaded")
+    os.makedirs(folder, exist_ok=True)
+    marker = os.path.join(folder, _safe(session_id))
+    lock = marker + ".lock"
+    try:  # one worker per session at a time (PreCompact and SessionEnd)
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        if time.time() - os.path.getmtime(lock) < 300:
+            return "busy"
+    try:
+        try:
+            with open(marker) as f:
+                start = int(f.read().strip() or 0)
+        except (OSError, ValueError):
+            start = 0
+        import excerpt as excerpt_module
+
+        text, end, turns = excerpt_module.build_excerpt(transcript, start)
+        if turns == 0 or len(text) < MIN_EXCERPT_CHARS:
+            if event_name == "PreCompact":
+                return "too-small"  # keep it for the next upload
+            with open(marker, "w") as f:
+                f.write(str(end))
+            return "too-small"
+        item = {"project": project, "excerpt": text, "sessionId": session_id}
+        outcome = _upload(base, key, item)
+        if outcome == "retry":
+            os.makedirs(_queue_dir(), exist_ok=True)
+            name = "%d-%s-%d.json" % (time.time(), _safe(session_id), start)
+            with open(os.path.join(_queue_dir(), name), "w", encoding="utf-8") as f:
+                json.dump(item, f)
+        with open(marker, "w") as f:
+            f.write(str(end))
+        return "uploaded" if outcome == "done" else outcome
+    finally:
+        try:
+            os.remove(lock)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +519,21 @@ def command(name, cwd):
         set_listed(settings, "off", project, False)
         save_settings(settings)
         return "InfraNodus memory is on for %s again." % project
+    if name == "forget-last":
+        key, base = api_settings()
+        if not key:
+            return "The InfraNodus API key isn't set (configure it in /plugin)."
+        try:
+            status, body = post(base, key, "/memory/forget", {"project": project}, 15)
+        except Exception as error:
+            return "Couldn't reach InfraNodus: %s" % error
+        if status != 200 or not isinstance(body, dict):
+            return "InfraNodus refused (%s): %s" % (status, (body or {}).get("error", ""))
+        count = body.get("forgotten", 0)
+        if not count:
+            return body.get("message") or "Nothing to forget for %s." % project
+        return "Removed the %d learning%s saved from the last session in %s." % (
+            count, "" if count == 1 else "s", project)
     state = "off" if listed(settings, "off", project) else "on"
     key, base = api_settings()
     lines = [
@@ -354,10 +562,28 @@ def main():
             outcome = "error:%s" % type(error).__name__
         log_timing("prompt", project, started, outcome)
         return 0
-    if action in ("off", "on", "status"):
+    if action == "hook-flush":
+        started = time.time()
+        outcome = "started"
+        try:
+            hook_flush(json.load(sys.stdin))
+        except Exception as error:
+            outcome = "error:%s" % type(error).__name__
+        log_timing("flush", None, started, outcome)
+        return 0
+    if action == "ingest-worker" and len(sys.argv) >= 6:
+        started = time.time()
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            outcome = ingest_worker(*sys.argv[2:6])
+        except Exception as error:
+            outcome = "error:%s" % type(error).__name__
+        log_timing("upload", project_for(sys.argv[4]), started, outcome)
+        return 0
+    if action in ("off", "on", "status", "forget-last"):
         print(command(action, os.getcwd()))
         return 0
-    print("usage: memory.py hook-prompt | off | on | status", file=sys.stderr)
+    print("usage: memory.py hook-prompt | hook-flush | off | on | status | forget-last", file=sys.stderr)
     return 0
 
 
