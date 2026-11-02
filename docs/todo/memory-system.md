@@ -26,33 +26,35 @@ Memory must never slow Claude down; see "Performance: never slow the agent down"
 - [ ] Recall block capped at 5 items and about 1,500 characters
 - [ ] Cap the queue size per session; trim the oldest tool output first
 - [ ] Every failure path exits 0 with no output
-- [ ] Log each hook's duration to `${CLAUDE_PLUGIN_DATA}/timings.log` (rotated)
+- [ ] Log each hook's duration to `~/.infranodus/timings.log` (rotated)
 
 ## Phase 2: plugin skeleton and recall hook
 
-- [ ] Repo root with `.claude-plugin/plugin.json`: name `infranodus-memory`, `mcpServers.infranodus` (same as the others, so it's merged), `userConfig.api_key` (`sensitive: true`, `required: true`, so Claude Code asks for it at install), `userConfig.exclude_paths` (globs, optional), `userConfig.mode` (`auto` default, or `review`)
-- [ ] `hooks/hooks.json` with `UserPromptSubmit` only for now
-- [ ] `hooks/memory_hook.py` (stdlib only, like `infranodus/scripts/repo2statements.py` in the skills repo): on the first prompt of a session, call `/api/v1/recall` with a 2 s timeout and return `hookSpecificOutput.additionalContext`; on any error or missing key, return nothing and exit 0
-- [ ] Project identity: git remote slug when available, else the directory name; must match the `project` that `get_project_learnings` uses
-- [ ] Track "first prompt" per `session_id` in `${CLAUDE_PLUGIN_DATA}`
-- [ ] Keep the `enabled` and `mode` values from the first recall's response for the rest of the session (no separate cache)
-- [ ] First-run line: when recall returns `firstRun: true`, show the user (a user-facing message, not only `additionalContext`) "InfraNodus memory is on for `<project>` → graph link. `/memory off` to stop for this project." Once per project
-- [ ] Invalid key: hooks do nothing; say so once in the first-run line
-- [ ] `/memory off` and `/memory on` (skill command → `/api/v1/memory/disable`, `/memory/enable-project`); `off` asks separately whether to delete the graph
+> Built 2026-11-02 (not released): `.claude-plugin/plugin.json` (`api_key` sensitive and required, optional `api_base`), `hooks/hooks.json`, `hooks/memory.py` (the hook and the commands in one stdlib file), `skills/{off,on,status}` (invoked as `/infranodus-memory:off` etc., namespaced so they never clash with Claude Code's `/memory`; `disable-model-invocation`, so Claude can't turn memory off by itself), `tests/test_memory.py` (9 tests, fake `/recall` server). Checked with `claude -p --plugin-dir .` against the local app: the model receives the block, the first-run line shows as a notice ("UserPromptSubmit says: …"), the hook takes ~170 ms, and the three commands work. `exclude_paths` isn't in yet (capture guard, phase 3).
+
+- [x] Repo root with `.claude-plugin/plugin.json`: name `infranodus-memory`, `mcpServers.infranodus` (same as the others, so it's merged), `userConfig.api_key` (`sensitive: true`, `required: true`, so Claude Code asks for it at install), `userConfig.exclude_paths` (globs, optional)
+- [x] `hooks/hooks.json` with `UserPromptSubmit` only for now
+- [x] `hooks/memory.py` (stdlib only, like `infranodus/scripts/repo2statements.py` in the skills repo): on the first prompt of a session, call `/api/v1/recall` with a 2 s timeout and return `hookSpecificOutput.additionalContext`; on any error or missing key, return nothing and exit 0
+- [x] Project identity: git remote slug when available, else the directory name; must match the `project` that `get_project_learnings` uses
+- [x] `~/.infranodus/memory.json`, the one local settings file for every client (design: "Where memory state lives"): `{ "off": [projects], "mode": "auto"|"review", "told": [projects] }`. Read it first in every hook; a missing or unreadable file means defaults (on, `auto`, nobody told yet)
+- [x] Track "first prompt" per `session_id` in `~/.infranodus/`
+- [x] First-run line: when the project isn't in `told` yet, show the user (a user-facing message, not only `additionalContext`) "InfraNodus memory is on for `<project>` → graph link. `/infranodus-memory:off` to stop for this project." Then add it to `told`
+- [x] Invalid key: hooks do nothing; say so once in the first-run line
+- [x] `/infranodus-memory:off` and `/infranodus-memory:on`: add or remove the project in `~/.infranodus/memory.json` (no server call). The graph is kept; deleting it is a separate, explicit action through the MCP `delete_graph` tool
 - [ ] Version the plugin in `plugin.json` and tag releases; the skills marketplace entry points at this repo
 - [ ] Release workflow: decide whether to build a zip (hooks don't work in Claude web; probably skip it)
 
 ## Phase 3: capture and ingest
 
-- [ ] Add `PostToolUse`, `PostToolUseFailure`, `Stop` hooks: append to a local queue in `${CLAUDE_PLUGIN_DATA}/queue/<session>.jsonl`, with no network calls and a 3 s timeout
-- [ ] Record nothing when the session's recall returned `enabled: false`, when the path matches `exclude_paths`, or in the home directory, temp folders, or a folder that is neither a git repo nor has a project marker
+- [ ] Add `PostToolUse`, `PostToolUseFailure`, `Stop` hooks: append to a local queue in `~/.infranodus/queue/<session>.jsonl`, with no network calls and a 3 s timeout
+- [ ] Record nothing when the project is in the `off` list, when the path matches `exclude_paths`, or in the home directory, temp folders, or a folder that is neither a git repo nor has a project marker
 - [ ] Redact before writing to the queue: API keys and tokens (common prefixes and high-entropy strings), private key blocks, `.env` contents; drop text inside `<private>…</private>`
 - [ ] Off switches checked first in every hook: `INFRANODUS_MEMORY_DISABLE=1`, `INFRANODUS_MEMORY_DISABLE_CAPTURE=1` (recall only)
-- [ ] `PreCompact` and `SessionEnd`: pre-trim the queue (last turns, failures, final answers, files edited, at most about 6k tokens, plus a list of successful shell commands up to about 1.5k tokens; reference implementation `experiments/extraction/trim.py`, mode `trimmed2`), then start a detached worker that posts to `/api/v1/ingest` with the `session_id`; delete the queue on success
+- [ ] `PreCompact` and `SessionEnd`: pre-trim the queue (last turns, failures, final answers, files edited, at most about 6k tokens, plus a list of successful shell commands up to about 1.5k tokens; reference implementation `experiments/extraction/trim.py`, mode `trimmed2`), then start a detached worker that posts to `/api/v1/ingest` with the `session_id` and `mode` from `memory.json`; delete the queue on success
 - [ ] Recover stuck queues on the next `SessionStart`: a queue whose worker died is retried
-- [ ] `/memory forget-last` → `/api/v1/memory/forget` (deletes the last session's statements by their `session-<id>` category)
+- [ ] `/infranodus-memory:forget-last` → `/api/v1/memory/forget` (deletes the last session's statements by their `session-<id>` category)
 - [ ] Show the recall's `saved` line ("Saved 4 learnings from your last session") and `quotaPaused` notice
-- [ ] `skills/memory/SKILL.md`: memory is on from install; `/memory off`/`on`, `/memory forget-last`, `exclude_paths` and `<private>` tags; `/memory review` for users in `review` mode; how to enable topic or personal memory
+- [ ] `skills/memory/SKILL.md`: memory is on from install; `/infranodus-memory:off`/`on`, `/infranodus-memory:forget-last`, `exclude_paths` and `<private>` tags; `/infranodus-memory:review` for users in `review` mode; how to enable topic or personal memory
 
 ## Phase 5: hooks for other clients
 
@@ -77,4 +79,4 @@ See "Hooks for other clients" in the design doc.
 - [ ] Hook unit tests: no key means no output and exit 0; a timeout means no output; only the first prompt per session triggers recall
 - [ ] Timing tests: each capture hook under 50 ms and each ingest hook under 100 ms on a long fixture session; recall gives up at 2 s against a slow mock server; a session with Claude Code and the plugin is not measurably slower than without it
 - [ ] Queue tests: nothing is written for a disabled or excluded project, the home directory or a non-project folder; secrets and `<private>` text are redacted; the queue is deleted after a successful ingest and kept after a failure
-- [ ] First-run line appears once per project; `/memory off` stops capture from the next event
+- [ ] First-run line appears once per project; `/infranodus-memory:off` stops capture from the next event

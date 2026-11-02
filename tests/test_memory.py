@@ -1,0 +1,200 @@
+"""Tests for hooks/memory.py (stdlib unittest, no network: a local fake
+/recall server stands in for InfraNodus).
+
+    python3 -m unittest discover -s tests
+"""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT = os.path.join(ROOT, "hooks", "memory.py")
+sys.path.insert(0, os.path.join(ROOT, "hooks"))
+import memory  # noqa: E402
+
+BLOCK = "From InfraNodus memory (learn-demo):\n- [learning: trap] x"
+
+
+class FakeRecall(BaseHTTPRequestHandler):
+    calls = []
+    status = 200
+    delay = 0.0
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length))
+        FakeRecall.calls.append(
+            {"path": self.path, "body": body, "auth": self.headers.get("Authorization")}
+        )
+        time.sleep(FakeRecall.delay)
+        payload = (
+            {"block": BLOCK, "graphUrl": "https://infranodus.com/u/learn-demo/edit", "items": [1]}
+            if FakeRecall.status == 200
+            else {"error": "nope"}
+        )
+        data = json.dumps(payload).encode()
+        self.send_response(FakeRecall.status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+class MemoryHookTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = HTTPServer(("127.0.0.1", 0), FakeRecall)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base = "http://127.0.0.1:%d/api/v1" % cls.server.server_port
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        FakeRecall.calls = []
+        FakeRecall.status = 200
+        FakeRecall.delay = 0.0
+        self.tmp = tempfile.mkdtemp(dir=os.path.expanduser("~"), prefix=".imtest-")
+        self.state = os.path.join(self.tmp, "state")
+        self.repo = os.path.join(self.tmp, "work", "demo")
+        os.makedirs(os.path.join(self.repo, ".git"))
+        with open(os.path.join(self.repo, ".git", "config"), "w") as f:
+            f.write('[core]\n[remote "origin"]\n\turl = git@github.com:acme/demo-repo.git\n')
+        self.env = dict(
+            os.environ,
+            INFRANODUS_HOME=self.state,
+            CLAUDE_PLUGIN_OPTION_API_KEY="k123",
+            CLAUDE_PLUGIN_OPTION_API_BASE=self.base,
+        )
+        self.env.pop("INFRANODUS_MEMORY_DISABLE", None)
+
+    def tearDown(self):
+        subprocess.run(["rm", "-rf", self.tmp])
+
+    def hook(self, session="s1", prompt="how do I run the tests", cwd=None, env=None):
+        event = {"session_id": session, "prompt": prompt, "cwd": cwd or self.repo}
+        started = time.time()
+        result = subprocess.run(
+            [sys.executable, SCRIPT, "hook-prompt"],
+            input=json.dumps(event),
+            capture_output=True,
+            text=True,
+            env=env or self.env,
+            timeout=10,
+        )
+        elapsed = time.time() - started
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout) if result.stdout.strip() else None
+        return out, elapsed
+
+    def command(self, name, cwd=None):
+        result = subprocess.run(
+            [sys.executable, SCRIPT, name],
+            capture_output=True, text=True, env=self.env, cwd=cwd or self.repo, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    # --- project identity -------------------------------------------------
+
+    def test_project_is_the_git_remote_name_else_the_folder(self):
+        self.assertEqual(memory.project_for(self.repo), "demo-repo")
+        sub = os.path.join(self.repo, "src", "deep")
+        os.makedirs(sub)
+        self.assertEqual(memory.project_for(sub), "demo-repo")
+        os.remove(os.path.join(self.repo, ".git", "config"))
+        self.assertEqual(memory.project_for(self.repo), "demo")
+
+    def test_home_temp_and_plain_folders_are_not_projects(self):
+        self.assertIsNone(memory.project_for(os.path.expanduser("~")))
+        self.assertIsNone(memory.project_for(tempfile.gettempdir()))
+        plain = os.path.join(self.tmp, "plain")
+        os.makedirs(plain)
+        self.assertIsNone(memory.project_for(plain))
+        with open(os.path.join(plain, "package.json"), "w") as f:
+            f.write("{}")
+        self.assertEqual(memory.project_for(plain), "plain")
+
+    # --- hook ---------------------------------------------------------------
+
+    def test_first_prompt_recalls_and_tells_once(self):
+        out, _ = self.hook()
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        self.assertEqual(out["hookSpecificOutput"]["additionalContext"], BLOCK)
+        self.assertIn("InfraNodus memory is on for demo-repo", out["systemMessage"])
+        self.assertIn("/infranodus-memory:off", out["systemMessage"])
+        call = FakeRecall.calls[0]
+        self.assertEqual(call["path"], "/api/v1/recall")
+        self.assertEqual(call["body"]["project"], "demo-repo")
+        self.assertEqual(call["body"]["prompt"], "how do I run the tests")
+        self.assertEqual(call["body"]["client"], "claude-code")
+        self.assertEqual(call["auth"], "Bearer k123")
+
+        # Same session: nothing more. New session: recall again, no first-run line.
+        again, _ = self.hook(session="s1")
+        self.assertIsNone(again)
+        next_session, _ = self.hook(session="s2")
+        self.assertIn("additionalContext", next_session["hookSpecificOutput"])
+        self.assertNotIn("systemMessage", next_session)
+        self.assertEqual(len(FakeRecall.calls), 2)
+
+    def test_off_sends_nothing_and_on_restores(self):
+        self.assertIn("now off for demo-repo", self.command("off"))
+        out, _ = self.hook()
+        self.assertIsNone(out)
+        self.assertEqual(FakeRecall.calls, [])
+        self.assertIn("off for this project", self.command("status"))
+        self.assertIn("on for demo-repo again", self.command("on"))
+        out, _ = self.hook(session="s2")
+        self.assertIsNotNone(out)
+
+    def test_not_a_project_missing_key_or_disable_env_send_nothing(self):
+        plain = os.path.join(self.tmp, "plain")
+        os.makedirs(plain)
+        self.assertIsNone(self.hook(cwd=plain)[0])
+        no_key = dict(self.env, CLAUDE_PLUGIN_OPTION_API_KEY="")
+        self.assertIsNone(self.hook(session="s2", env=no_key)[0])
+        disabled = dict(self.env, INFRANODUS_MEMORY_DISABLE="1")
+        self.assertIsNone(self.hook(session="s3", env=disabled)[0])
+        self.assertEqual(FakeRecall.calls, [])
+
+    def test_rejected_key_is_said_once_and_errors_are_silent(self):
+        FakeRecall.status = 401
+        out, _ = self.hook(session="a")
+        self.assertIn("API key was rejected", out["systemMessage"])
+        self.assertIsNone(self.hook(session="b")[0], "said only once")
+        FakeRecall.status = 500
+        self.assertIsNone(self.hook(session="c")[0])
+
+    def test_timeout_is_silent_and_bounded(self):
+        FakeRecall.delay = 3.5
+        out, elapsed = self.hook()
+        self.assertIsNone(out)
+        self.assertLess(elapsed, memory.RECALL_TIMEOUT_S + 1.0)
+
+    def test_skipped_prompts_are_fast(self):
+        self.hook()
+        _, elapsed = self.hook(session="s1")  # already recalled: no network
+        self.assertLess(elapsed, 0.3)
+
+    def test_broken_settings_file_means_defaults(self):
+        os.makedirs(self.state, exist_ok=True)
+        with open(os.path.join(self.state, "memory.json"), "w") as f:
+            f.write("{not json")
+        out, _ = self.hook()
+        self.assertIsNotNone(out)
+
+
+if __name__ == "__main__":
+    unittest.main()

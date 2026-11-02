@@ -1,6 +1,8 @@
 # Plan: building the InfraNodus memory plugin
 
-> Status: **plan, 2026-10-31.** Nothing implemented yet. The design (what the
+> Status: **plan, 2026-10-31; revised 2026-11-02** after the consent model
+> changed (memory state is the graph type; `/infranodus-memory:off` is local). Step 2
+> done, step 3 built. The design (what the
 > system does and why) is in the design doc; this is the order to build it in.
 > Each step depends on the one before it, except step 2, which runs alongside
 > step 3.
@@ -57,31 +59,73 @@ has to be good before step 5 ships. Needs no new code.
 
 ## Step 3: phase 1, one implementation (`infranodus-app`, `mcp-server-infranodus`)
 
-- [ ] `infranodus-app`: `/api/v1/learnings/{enable,get,add}` and
-      `/memory/{enable,add,get}`, with naming, dedup and consent markers moved
-      out of `mcp-server-infranodus/src/utils/learnings.ts`
-- [ ] `mcp-server-infranodus`: learnings and memory tools call the new
-      endpoints, same inputs and outputs; add `scope` and `topic` to the memory
-      tools
-- **Done when** the existing tool tests pass against mocks of the new endpoints
-  and clients notice nothing. Deploy
+- [x] `infranodus-app`: `/api/v1/learnings/{enable,get,add}` and
+      `/memory/{enable,add,get}`, with naming, dedup and consent moved out of
+      the MCP server
+- [x] `mcp-server-infranodus`: learnings and memory tools call the new
+      endpoints, same inputs and outputs; `scope`, `topic`, `language`,
+      `enable_memory`
+- Built 2026-11-02 and checked live against the local app; not deployed.
+  Built with marker statements, which the consent model of 2026-11-02
+  replaces (design: "Where memory state lives"), so before deploying:
+
+### 3a. Memory state from the graph type (`infranodus-app`)
+
+Done 2026-11-02, live-checked. `enable` creates the empty graph through the
+backend's `contexts/graph`; two empty-graph failures fixed on the way (see the
+app todo).
+
+- [x] Find out how `enable` can create an empty graph of type `MEMORY`
+      through the existing write path (or the smallest call that can)
+- [x] State check from the cached graph list: the graph exists and is
+      `MEMORY`. Legacy: a `learn-*` graph that isn't `MEMORY` counts if it has
+      a `learnings-enabled` statement
+- [x] Remove marker statements, `mode`, the `memory-disabled` marker,
+      `/memory/disable` and `/memory/enable-project`; leave existing marker
+      statements out of `get`
+- [x] Update the tests (graph type, hand-made graph refused, legacy graph
+      accepted, a learning mentioning a marker changes nothing); live check
+      against the local app, including that `knownAreas` no longer shows a
+      marker topic
+
+### 3b. MCP server follows
+
+- [x] Drop the `disabled` test and any `mode` mentions; full test suite;
+      live run of every tool against the local app
+
+### 3c. Ship
+
+- [ ] Commit both repos (on request), deploy the app, then release the MCP
+      server; never the other way round
+- [ ] Ask before the optional cleanup: remove the old marker statements from
+      the user's existing `learn-*` graphs with `update_statements` /
+      `delete_statements`
+- **Done when** the tool tests pass against mocks of the new endpoints,
+  clients notice nothing, and production serves the new endpoints
 
 ## Step 4: phase 2, recall only, nothing written
 
-- [ ] `infranodus-app`: `/recall` (p95 < 1.5 s) and `/memory/disable`
-- [ ] This repo:
+- [x] `infranodus-app`: `/recall` (p95 < 1.5 s; 30–40 ms locally, no AI call): searches `learn-<project>`
+      and `personal-<user>` when they exist as memory graphs; empty for a
+      project with no graph; no on/off or "told" state on the server
+- [x] This repo (built 2026-11-02, tested with `claude -p --plugin-dir .`):
   - `.claude-plugin/plugin.json` with the shared `mcpServers.infranodus`
     entry and the `api_key` setting
+  - `~/.infranodus/memory.json` (off list, mode, projects already told),
+    read first by every hook
   - `hooks/hooks.json` with `UserPromptSubmit` only
   - `hooks/memory_hook.py`: standard-library Python, 2 s timeout, exits 0
-    with no output on any failure
-  - the first-run line, `/memory off` and `/memory on`
+    with no output on any failure, and does nothing for a project in the
+    off list
+  - the first-run line, `/infranodus-memory:off` and `/infranodus-memory:on` (local only)
+- [ ] Publish this repo on GitHub first (open in step 1; you)
 - [ ] `Skills/InfraNodus-Skills`: marketplace entry pointing at this repo;
       extend `tests/split-test.sh`
 - [ ] Test locally by loading the plugin from this folder, then install it
       from the marketplace
 - **Done when** a new session in a project with an existing `learn-*` graph
-  shows the recall block and the timing tests pass
+  shows the recall block, a project in the off list shows nothing and sends
+  nothing, and the timing tests pass
 
 ## Step 5: phase 3, the full cycle
 
@@ -89,14 +133,17 @@ has to be good before step 5 ships. Needs no new code.
   - `/ingest`: returns 202 at once, extracts in the background, a retried
     upload with the same `sessionId` writes nothing twice; uses the v2 prompt
     and schema from `experiments/extraction/`; default model picked by
-    re-running the 8 test sessions through it
-  - creates the learnings graph on the first ingest that yields statements;
-    tags each statement with `session-<id>`
+    re-running the 8 test sessions through it; supersession of updated
+    statements
+  - creates `learn-<project>` as a `MEMORY` graph on the first ingest that
+    yields statements; tags each statement with `session-<id>`; `mode` from
+    the request (`auto`, or `review` into the inbox)
   - `/memory/forget`, quota pause, inbox for review mode
 - [ ] This repo:
-  - capture hooks writing to a local queue, with redaction and exclusion guards
+  - capture hooks writing to `~/.infranodus/queue/`, with redaction and
+    exclusion guards
   - background ingest worker on `PreCompact` and `SessionEnd`
-  - `/memory forget-last` and `/memory review`
+  - `/infranodus-memory:forget-last` and `/infranodus-memory:review`
 - [ ] `mcp-server-infranodus`: `review_memory` tool and `inboxCount`
 - [ ] Before release: the skills README's "What gets uploaded and where" table
       and the InfraNodus privacy policy describe the default-on behaviour

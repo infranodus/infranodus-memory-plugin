@@ -1,0 +1,44 @@
+{
+	"name": "infranodus-memory",
+	"version": "0.1.0",
+	"description": "Automatic memory for Claude Code, stored as a knowledge graph in your InfraNodus account: at the first prompt of a session it recalls what earlier sessions learned about the project, plus a gap the memory doesn't cover yet. On in every project once installed; /infranodus-memory:off stops it for one project.",
+	"author": {
+		"name": "InfraNodus",
+		"url": "https://infranodus.com"
+	},
+	"license": "Apache-2.0",
+	"keywords": [
+		"infranodus",
+		"memory",
+		"agent-memory",
+		"knowledge-graph",
+		"project-learnings",
+		"recall"
+	],
+	"homepage": "https://github.com/infranodus/infranodus-memory-plugin",
+	"repository": "https://github.com/infranodus/infranodus-memory-plugin",
+	"supportUrl": "https://support.noduslabs.com",
+	"privacyPolicyUrl": "https://infranodus.com/about/privacy-policy",
+	"termsOfServiceUrl": "https://infranodus.com/about/terms-conditions",
+	"userConfig": {
+		"api_key": {
+			"type": "string",
+			"title": "InfraNodus API key",
+			"description": "From https://infranodus.com/api-access. Used by the memory hooks to recall what earlier sessions learned; stored in your system's secure store.",
+			"sensitive": true,
+			"required": true
+		},
+		"api_base": {
+			"type": "string",
+			"title": "InfraNodus API address (optional)",
+			"description": "Leave as is unless you run your own InfraNodus server.",
+			"default": "https://infranodus.com/api/v1"
+		}
+	},
+	"mcpServers": {
+		"infranodus": {
+			"type": "http",
+			"url": "https://mcp.infranodus.com"
+		}
+	}
+}
