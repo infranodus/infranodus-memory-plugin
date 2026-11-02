@@ -1,0 +1,15 @@
+{
+	"name": "infranodus-memory-dev",
+	"description": "Development marketplace for the infranodus-memory plugin: install it from this repo (local folder or GitHub) before it is listed in the InfraNodus skills marketplace.",
+	"owner": {
+		"name": "InfraNodus",
+		"url": "https://github.com/infranodus/infranodus-memory-plugin"
+	},
+	"plugins": [
+		{
+			"name": "infranodus-memory",
+			"source": "./",
+			"description": "Automatic memory for Claude Code, stored as a knowledge graph in your InfraNodus account: recalls what earlier sessions learned about the project at the first prompt of a session."
+		}
+	]
+}

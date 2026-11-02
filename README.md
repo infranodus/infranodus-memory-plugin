@@ -10,6 +10,17 @@ say what the memory is missing.
 automatically comes next; until then, learnings are saved with the
 `add_project_learnings` MCP tool.
 
+## Install
+
+```
+/plugin marketplace add infranodus/infranodus-memory-plugin
+/plugin install infranodus-memory@infranodus-memory-dev
+```
+
+From a local clone: `/plugin marketplace add ~/path/to/infranodus-memory-plugin`,
+then the same install line. Claude Code asks for your API key. Later the plugin
+is also listed in the InfraNodus skills marketplace.
+
 ## What it does
 
 - **On the first prompt of a session** in a project, it sends the prompt and
