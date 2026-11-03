@@ -1,6 +1,6 @@
 {
-	"name": "infranodus-memory-dev",
-	"description": "Development marketplace for the infranodus-memory plugin: install it from this repo (local folder or GitHub) before it is listed in the InfraNodus skills marketplace.",
+	"name": "infranodus-memory",
+	"description": "Marketplace for the infranodus-memory plugin: automatic memory for Claude Code, Codex and Grok Build, stored as a knowledge graph in your InfraNodus account. Install it from this repo on GitHub or from a local clone.",
 	"owner": {
 		"name": "InfraNodus",
 		"url": "https://github.com/infranodus/infranodus-memory-plugin"

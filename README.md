@@ -23,7 +23,7 @@ its published hook contract and not yet run against the real client (see
 
 ```
 /plugin marketplace add infranodus/infranodus-memory-plugin
-/plugin install infranodus-memory@infranodus-memory-dev
+/plugin install infranodus-memory@infranodus-memory
 ```
 
 From a local clone: `/plugin marketplace add ~/path/to/infranodus-memory-plugin`,
