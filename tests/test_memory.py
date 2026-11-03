@@ -94,6 +94,7 @@ class MemoryHookTest(unittest.TestCase):
         self.env = dict(
             os.environ,
             INFRANODUS_HOME=self.state,
+            INFRANODUS_TRANSCRIPTS=os.path.join(self.tmp, "projects"),
             CLAUDE_PLUGIN_OPTION_API_KEY="k123",
             CLAUDE_PLUGIN_OPTION_API_BASE=self.base,
         )
@@ -352,6 +353,16 @@ class MemoryUploadTest(MemoryHookTest):
         self.assertNotIn("learn-other", out, "another project's learnings")
         self.assertNotIn("memory-handmade", out, "not a memory graph")
         self.assertNotIn("notes", out)
+        self.assertIn("Claude's own memory for this folder: none.", out)
+
+    def test_graphs_lists_claudes_own_memory_notes(self):
+        import re
+        folder = os.path.join(self.tmp, "projects",
+                              re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)), "memory")
+        os.makedirs(folder)
+        for name in ("MEMORY.md", "feedback_a.md", "project_b.md"):
+            open(os.path.join(folder, name), "w").write("x")
+        self.assertIn("2 notes in %s" % folder, self.command("graphs"))
 
     def test_404_is_queued_not_dropped(self):
         path = self.transcript()

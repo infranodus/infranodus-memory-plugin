@@ -49,7 +49,7 @@ is also listed in the InfraNodus skills marketplace.
 | `/infranodus-memory:on` | Turn it back on |
 | `/infranodus-memory:status` | Show the project name, whether memory is on, and whether the key is set |
 | `/infranodus-memory:save` | Save this session now instead of at its end. Claude also runs it when you ask in plain words ("save what we learned to memory") |
-| `/infranodus-memory:optimize [learnings \| <topic> \| all]` | Analyse the project's learnings and/or topic memory with InfraNodus `optimize_knowledge_base`, then propose statements that bridge the gaps it finds; saves only the ones you approve. Needs the InfraNodus MCP server authenticated in `/mcp` |
+| `/infranodus-memory:optimize [learnings \| <topic> \| claude \| claude-mem \| mem0 \| all]` | Analyse the project's memory with InfraNodus `optimize_knowledge_base`: its InfraNodus learnings and topic graphs, and also Claude's own memory notes, claude-mem or mem0 when present (sent as they are, not stored). With several, it asks which. Then it proposes statements that bridge the gaps it finds and saves only the ones you approve. Needs the InfraNodus MCP server authenticated in `/mcp` |
 | `/infranodus-memory:forget-last` | Remove the learnings saved from the last session |
 
 They are namespaced, so they don't clash with Claude Code's own `/memory`.

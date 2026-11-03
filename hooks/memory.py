@@ -659,6 +659,21 @@ def list_memory_graphs(project):
     return "Memory graphs for %s:\n%s" % (project, "\n".join(r for _, r in sorted(rows)))
 
 
+def claude_memory_files(cwd):
+    """Claude Code's own memory for this folder (the auto-memory notes in
+    ~/.claude/projects/<folder>/memory/), so /optimize can analyse them too."""
+    folder = os.path.join(transcripts_dir(cwd), "memory")
+    try:
+        files = sorted(
+            f for f in os.listdir(folder) if f.endswith(".md") and f != "MEMORY.md"
+        )
+    except OSError:
+        files = []
+    if not files:
+        return "Claude's own memory for this folder: none."
+    return "Claude's own memory for this folder: %d notes in %s" % (len(files), folder)
+
+
 def command(name, cwd):
     project = project_for(cwd)
     if not project:
@@ -682,7 +697,7 @@ def command(name, cwd):
     if name == "save":
         return save_now(cwd)
     if name == "graphs":
-        return list_memory_graphs(project)
+        return list_memory_graphs(project) + "\n\n" + claude_memory_files(cwd)
     if name == "forget-last":
         key, base = api_settings()
         if not key:
