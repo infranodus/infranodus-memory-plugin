@@ -28,7 +28,7 @@
 					{
 						"type": "command",
 						"command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory.py\" hook-flush",
-						"timeout": 5
+						"timeout": 3
 					}
 				]
 			}

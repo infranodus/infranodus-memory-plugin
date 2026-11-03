@@ -1,0 +1,52 @@
+{
+	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+	"name": "infranodus-memory",
+	"version": "0.7.0",
+	"description": "Automatic memory for Codex, stored as a knowledge graph in your InfraNodus account: at the end of a session it saves what was learned about the project; at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. On in every project once installed and trusted; /infranodus-memory:off stops it for one project.",
+	"author": {
+		"name": "Nodus Labs",
+		"url": "https://infranodus.com"
+	},
+	"homepage": "https://infranodus.com/docs/claude-code-memory-plugin",
+	"repository": "https://github.com/infranodus/infranodus-memory-plugin",
+	"license": "Apache-2.0",
+	"keywords": [
+		"infranodus",
+		"memory",
+		"agent-memory",
+		"knowledge-graph",
+		"project-learnings",
+		"recall"
+	],
+	"skills": "./skills/",
+	"mcpServers": "./.mcp.json",
+	"extensions": {
+		"com.openai": {
+			"interface": {
+				"displayName": "InfraNodus Memory",
+				"shortDescription": "Automatic project memory as a knowledge graph",
+				"longDescription": "InfraNodus Memory gives Codex a memory of what each session learned about a project. Hooks upload a trimmed, redacted excerpt of the session when it ends; InfraNodus extracts the durable learnings (locations, traps, conventions, decisions with their reasons, workflows) into a learn-<project> knowledge graph in your account; the first prompt of the next session recalls the learnings that match it, plus one gap the memory never connects. The same graph is readable in the InfraNodus web app, in the Obsidian plugin and from any MCP client.\n\nRequirements: an InfraNodus account and API key (set it once with the plugin's set-key command or the INFRANODUS_API_KEY variable), and trusting the plugin's hooks in /hooks. Each session costs one AI call from the account's quota. Nothing is sent from folders without a git repository or project file, from excluded folders, or from projects turned off with /infranodus-memory:off.",
+				"developerName": "Nodus Labs",
+				"category": "Productivity",
+				"capabilities": [
+					"Recall project learnings on the first prompt",
+					"Save what a session learned, automatically",
+					"Report a gap the memory never connects",
+					"Undo the last session's learnings",
+					"Look up and optimize the memory graph"
+				],
+				"websiteURL": "https://infranodus.com",
+				"supportURL": "https://support.noduslabs.com",
+				"privacyPolicyURL": "https://infranodus.com/about/privacy-policy",
+				"termsOfServiceURL": "https://infranodus.com/about/terms-conditions",
+				"defaultPrompt": [
+					"What does memory say about the build and test workflow here?",
+					"Save what we learned in this session to InfraNodus memory",
+					"Find the gaps in this project's memory"
+				],
+				"logo": "./assets/logo.png",
+				"composerIcon": "./assets/logo.png"
+			}
+		}
+	}
+}

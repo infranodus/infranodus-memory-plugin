@@ -9,6 +9,9 @@ allowed-tools: Bash(python3:*), Read
 
 !`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/memory.py" graphs --key "${user_config.api_key}" --base "${user_config.api_base}"`
 
+
+If nothing appears above, the client did not run that command line (Codex and Grok Build load this skill but only Claude Code executes the `!` preamble): run it yourself from the project folder, `python3 <plugin root>/hooks/memory.py graphs`, where the plugin root is the folder two levels above this SKILL.md. There the API key comes from `INFRANODUS_API_KEY` or from `memory.py set-key`, not from `/plugin`.
+
 ## What to do
 
 1. **Find the memory sources.** Possible sources:
@@ -19,7 +22,7 @@ allowed-tools: Bash(python3:*), Read
 
    If there is none, say there is no memory to optimize yet and stop. If the user named one in the command (`$ARGUMENTS`), use that. With one source, use it. With several, ask with the AskUserQuestion tool (multiSelect) which to optimize, one option per source with a few words on what it holds.
 
-2. **Analyze each chosen source on its own** with the InfraNodus MCP tool `optimize_knowledge_base`, `includeLatent: true`, `focus: "procedural"` for project learnings and Claude's notes about how to work in a project, `"general"` otherwise. If the tool isn't available, say the InfraNodus MCP server needs authenticating in `/mcp` and stop.
+2. **Analyze each chosen source on its own** with the InfraNodus MCP tool `optimize_knowledge_base`, `includeLatent: true`, `focus: "procedural"` for project learnings and Claude's notes about how to work in a project, `"general"` otherwise. If the tool isn't available, say the InfraNodus MCP server needs authenticating in `/mcp` (Claude Code) or connecting as the plugin's MCP server (Codex, Grok) and stop.
    - **An InfraNodus graph:** `graphName` set to the graph.
    - **Any other memory:** send the memories as they are, one per item in `statements`, without rewriting them or adding wikilinks, and without `saveAs`, so nothing is stored in InfraNodus.
      - Claude's own memory: Read each note in the folder (skip `MEMORY.md`); one statement per note, its text without the frontmatter.

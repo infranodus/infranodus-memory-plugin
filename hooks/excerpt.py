@@ -9,6 +9,11 @@ tokens, most recent turns kept. Secrets and <private> text are redacted.
 One addition: `start_line`. The transcript only grows, and a session can be
 uploaded more than once (before a compaction, then at its end), so each upload
 covers only the lines after the previous one.
+
+Two transcript formats are read, detected from the lines themselves:
+Claude Code's (`type: user|assistant` with a `message`) and Codex's rollout
+(`type: response_item|event_msg|session_meta` with a `payload`), which Codex
+hands to hooks as `transcript_path` too.
 """
 
 import json
@@ -61,8 +66,106 @@ def result_text(content):
     return ""
 
 
+CODEX_TYPES = ("response_item", "event_msg", "session_meta", "turn_context")
+# Codex tool names that run a shell command, and the argument that holds it.
+CODEX_SHELL_TOOLS = ("shell", "shell_command", "exec_command", "local_shell", "bash", "container.exec")
+CODEX_TAG = re.compile(r"^\s*<[a-z][a-z0-9_:-]*[\s>/]")
+EXIT_CODE = re.compile(r"(?i)\bexit[ _]code\W{0,4}(\d+)")
+
+
+def transcript_format(lines):
+    """'codex' or 'claude', from the first lines that parse."""
+    for line in lines[:50]:
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(o, dict) and o.get("type") in CODEX_TYPES:
+            return "codex"
+    return "claude"
+
+
+def _codex_text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            b.get("text", "") for b in content
+            if isinstance(b, dict) and b.get("type") in ("input_text", "output_text", "text")
+        )
+    return ""
+
+
+def _codex_shell_command(name, args):
+    """The shell command of a Codex tool call, or None when it isn't one."""
+    if name not in CODEX_SHELL_TOOLS:
+        return None
+    cmd = args.get("cmd") or args.get("command") or ""
+    if isinstance(cmd, list):  # ["bash", "-lc", "npm test"]
+        cmd = cmd[-1] if len(cmd) >= 3 and cmd[1] in ("-lc", "-c") else " ".join(str(c) for c in cmd)
+    return str(cmd)
+
+
+def _codex_patched_files(patch):
+    return re.findall(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", patch or "", re.M)
+
+
+def events_codex(lines):
+    """The Codex rollout: the same (kind, data) events as events() yields
+    for Claude Code, so trimmed() and commands_run() need no second path.
+    Tool calls become ("tool", (id, "Bash"|"Edit"|name, input)) and their
+    outputs ("result", (id, is_error, text)); an error is a non-zero exit
+    code or an output that starts with an error word."""
+    for line in lines:
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(o, dict):
+            continue
+        p = o.get("payload") or {}
+        t, pt = o.get("type"), p.get("type")
+        if t == "response_item" and pt == "message":
+            text = _codex_text(p.get("content"))
+            if p.get("role") == "user":
+                # Codex wraps context and app events in XML-like tags; a prompt
+                # the person typed doesn't start with one.
+                if text.strip() and not CODEX_TAG.match(text):
+                    yield "prompt", text
+            elif p.get("role") == "assistant" and text.strip():
+                yield "text", text
+        elif t == "event_msg" and pt == "task_complete" and p.get("last_agent_message"):
+            yield "text", p["last_agent_message"]
+        elif t == "response_item" and pt in ("function_call", "custom_tool_call"):
+            name = p.get("name") or "?"
+            raw = p.get("arguments") if pt == "function_call" else p.get("input")
+            try:
+                args = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            except ValueError:
+                args = {"input": raw}
+            if not isinstance(args, dict):
+                args = {"input": args}
+            cmd = _codex_shell_command(name, args)
+            if cmd is not None:
+                yield "tool", (p.get("call_id"), "Bash", {"command": cmd})
+            elif name == "apply_patch":
+                patch = args.get("input") or args.get("patch") or (raw if isinstance(raw, str) else "")
+                for path in _codex_patched_files(patch):
+                    yield "tool", (p.get("call_id"), "Edit", {"file_path": path})
+            else:
+                yield "tool", (p.get("call_id"), name, args)
+        elif t == "response_item" and pt in ("function_call_output", "custom_tool_call_output"):
+            text = _codex_text(p.get("output"))
+            m = EXIT_CODE.search(text[:400])
+            is_error = bool(m and m.group(1) != "0") or text.lstrip()[:6].lower().startswith("error")
+            yield "result", (p.get("call_id"), is_error, text)
+
+
 def events(lines):
-    """Yield (kind, data) in transcript order."""
+    """Yield (kind, data) in transcript order, for either format."""
+    if transcript_format(lines) == "codex":
+        yield from events_codex(lines)
+        return
     for line in lines:
         try:
             o = json.loads(line)

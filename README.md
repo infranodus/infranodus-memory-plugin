@@ -6,9 +6,20 @@ session it recalls what earlier sessions learned about the project; at the end
 of a session it saves new learnings. Because memory is a graph, recall can also
 say what the memory is missing.
 
-**Status:** the full cycle works (saving and recall), not released yet.
+Runs in **Claude Code**, **Codex** (OpenAI) and **Grok Build** (xAI) from the
+same files: one `hooks/hooks.json`, one hook runtime, a Claude Code manifest
+(`.claude-plugin/`), a Codex manifest (`.codex-plugin/`, `.mcp.json`,
+`.agents/plugins/marketplace.json`), and Grok's Claude Code compatibility.
+
+**Status:** the full cycle works (saving and recall) in Claude Code, not
+released yet. Codex support is built on the documented hook and rollout
+formats and tested against recorded sessions; Grok Build support is built on
+its published hook contract and not yet run against the real client (see
+"Grok Build" below for what is verified and what is not).
 
 ## Install
+
+### Claude Code
 
 ```
 /plugin marketplace add infranodus/infranodus-memory-plugin
@@ -18,6 +29,45 @@ say what the memory is missing.
 From a local clone: `/plugin marketplace add ~/path/to/infranodus-memory-plugin`,
 then the same install line. Claude Code asks for your API key. Later the plugin
 is also listed in the InfraNodus skills marketplace.
+
+### Codex (OpenAI)
+
+```
+codex plugin marketplace add infranodus/infranodus-memory-plugin
+```
+
+Then install `infranodus-memory` from the marketplace in the Codex app or the
+`/plugins` screen of the CLI, and trust its three hooks in `/hooks` (Codex
+skips untrusted hooks). Codex has no plugin settings screen, so set the API
+key once, from any project folder:
+
+```
+python3 ~/.codex/plugins/<path-to>/infranodus-memory/hooks/memory.py set-key YOUR_INFRANODUS_API_KEY
+```
+
+or export `INFRANODUS_API_KEY` in your shell. The key is kept in
+`~/.infranodus/memory.json` (mode 600). The plugin's `.mcp.json` adds the
+InfraNodus MCP server (OAuth) for the `recall` and `optimize` skills. Codex runs
+the same hooks as Claude Code, with the same payload, and its session rollout
+is read as the transcript; its `SessionEnd` hooks are limited to 3 s, which the
+upload hook meets by handing the work to a background process in about 5 ms.
+
+### Grok Build (xAI)
+
+Grok loads Claude Code plugins, marketplaces and hooks as they are, so install
+the Claude Code plugin (the marketplace line above, or `grok --plugin-dir
+~/path/to/infranodus-memory-plugin`), trust the hooks with `/hooks-trust`, and
+set the key with `set-key` or `INFRANODUS_API_KEY` as for Codex. Grok sends
+hooks a camelCase payload (`hookEventName`, `sessionId`, `cwd`,
+`workspaceRoot`) and `GROK_*` variables; the runtime reads both. Because Grok
+ignores what a hook writes to stdout, the recall is also written to
+`<project>/.grok/rules/infranodus-memory.md`, a rules file Grok loads at session
+start (so it is current from the next session on; add the file to
+`.git/info/exclude` if you don't want it in the repo). Saving needs the
+session transcript: Grok keeps sessions under `~/.grok/sessions/` in a format
+its docs don't describe, so the upload runs only when Grok passes a
+`transcript_path` the runtime can read; otherwise nothing is sent and nothing
+breaks.
 
 ## What it does
 
@@ -61,20 +111,35 @@ They are namespaced, so they don't clash with Claude Code's own `/memory`.
 ## Settings and local files
 
 - `api_key` (required): your InfraNodus API key, asked for at install and kept
-  in your system's secure store. Change it later in `/plugin`.
+  in your system's secure store. Change it later in `/plugin`. Codex and
+  Grok have no plugin settings: there the hooks read `INFRANODUS_API_KEY`
+  or the key stored by `hooks/memory.py set-key` (`clear-key` removes it).
 - `api_base` (optional): only for your own InfraNodus server.
 - `save` (optional): what sessions save. `both` (the default), `learnings`
   (how to work in each project) or `memories` (facts about clients,
   companies, cases, each in its own `memory-<topic>` graph).
 - `exclude_paths` (optional): folders where memory never runs, e.g.
   `~/clients/*, ~/private`.
-- `~/.infranodus/memory.json`: the projects turned off, and the projects you
-  were already told about. Kept outside the project so a setting is never
+- `~/.infranodus/memory.json`: the projects turned off, the projects you
+  were already told about, and the API key when set with `set-key`. Kept outside the project so a setting is never
   committed for your teammates.
 - `~/.infranodus/sessions/`, `~/.infranodus/uploaded/`: which sessions already
   had their recall, and how far each was uploaded.
 - `~/.infranodus/queue/`: uploads that failed, retried later (kept 7 days).
 - `~/.infranodus/timings.log`: how long each hook run took.
+
+## Clients
+
+| | Claude Code | Codex | Grok Build |
+|---|---|---|---|
+| Manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` + `.mcp.json`, catalog in `.agents/plugins/marketplace.json` | the Claude Code manifest, through Grok's compatibility layer |
+| Hooks | `hooks/hooks.json` | the same file (`${CLAUDE_PLUGIN_ROOT}` is set by Codex too) | the same file |
+| Payload | `session_id`, `cwd`, `prompt`, `transcript_path` | the same | `hookEventName`, `sessionId`, `cwd`, `workspaceRoot`, `GROK_*` variables |
+| Recall reaches the model through | `additionalContext` | `additionalContext` | `.grok/rules/infranodus-memory.md` (stdout is ignored) |
+| Transcript read for the upload | Claude Code `.jsonl` | Codex rollout `.jsonl` | only if passed as `transcript_path` |
+| API key | plugin setting | `INFRANODUS_API_KEY` or `set-key` | `INFRANODUS_API_KEY` or `set-key` |
+| Skills' `!` preamble | runs | shown as text; the skill tells the agent the command to run | shown as text, same |
+| `client` sent to the API | `claude-code` | `codex` | `grok` |
 
 ## Development
 

@@ -1,0 +1,20 @@
+{
+	"name": "infranodus-memory-dev",
+	"interface": {
+		"displayName": "InfraNodus Memory"
+	},
+	"plugins": [
+		{
+			"name": "infranodus-memory",
+			"source": {
+				"source": "local",
+				"path": "./"
+			},
+			"policy": {
+				"installation": "AVAILABLE",
+				"authentication": "ON_INSTALL"
+			},
+			"category": "Productivity"
+		}
+	]
+}

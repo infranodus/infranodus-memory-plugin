@@ -156,5 +156,5 @@ plugin todo).
 ## Step 6: later
 
 - [ ] Phase 4: personal memory; device login replacing the API key
-- [ ] Phase 5: adapters for Codex CLI and Cursor, then installers
+- [~] Phase 5: adapters for Codex and Grok Build built 2026-11-03 (manifests, payload normalization, Codex rollout parser, key without plugin settings); Cursor and installers open
 - [ ] Optional: the analytical-layer and importer edits from the comparison doc

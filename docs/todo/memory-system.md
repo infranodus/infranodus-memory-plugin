@@ -63,16 +63,30 @@ Memory must never slow Claude down; see "Performance: never slow the agent down"
 
 See "Hooks for other clients" in the design doc.
 
+> Built 2026-11-03 for Codex and Grok Build, without the package split below:
+> `detect_client()` and `normalize_event()` in `hooks/memory.py` (one
+> `hooks.json`, snake_case or camelCase payload, `GROK_*` variables, `client`
+> sent with every call), `excerpt.py` reads Codex rollouts (`session_meta` /
+> `response_item` / `event_msg`; shell tools and `apply_patch` map to the
+> Claude Code events), the key comes from `INFRANODUS_API_KEY` or
+> `memory.py set-key` where there are no plugin settings, Grok's recall is
+> written to `<project>/.grok/rules/infranodus-memory.md`, and `save` finds the
+> Codex rollout for the folder under `$CODEX_HOME/sessions`. Manifests:
+> `.codex-plugin/plugin.json`, `.mcp.json`, `.agents/plugins/marketplace.json`
+> (Grok uses the Claude Code manifest). Tests in `OtherClientsTest`. Not yet
+> run against a live Codex CLI or Grok Build session; Grok's transcript format
+> is undocumented, so its upload depends on a `transcript_path` in the payload.
+
 - [ ] Restructure `hooks/memory_hook.py` into a small package: `core` (recall, queue, enable cache, ingest worker) and `adapters/<client>.py` (normalize stdin, format output); entry point `hook <client> <event>` with events `start`, `prompt`, `tool`, `stop`, `compact`
 - [ ] Claude Code adapter first, with the existing behaviour unchanged (the plugin's `hooks.json` calls `hook claude-code <event>`)
 - [ ] `raw` adapter that reads the internal event shape, used for unknown clients
-- [ ] Codex CLI adapter: supports `additionalContext`, so recall works as in Claude Code
+- [x] Codex CLI adapter: supports `additionalContext`, so recall works as in Claude Code (2026-11-03, same hooks.json; rollout parser in excerpt.py)
 - [ ] Cursor adapter: no context injection; write recall to `.cursor/rules/infranodus-memory.mdc` (`alwaysApply: true`, "generated, do not edit" header), refreshed on `prompt` and after ingest
 - [ ] Then Windsurf (`.windsurf/rules/`), Gemini CLI, Kimi: check each client's current hook docs for event names and payloads before writing the adapter
 - [ ] Installer: `install --client <name>` / `uninstall --client <name>` writes and removes the client's hook config, the MCP entry if missing, the rules file, and a `.gitignore` line for it
 - [ ] One table of per-client hook timeouts; recall's request budget derived from it; a test that the configs the installer writes match the table
 - [ ] Off switches checked first in every hook: `INFRANODUS_MEMORY_DISABLE=1`, `INFRANODUS_MEMORY_DISABLE_CAPTURE=1`
-- [ ] Send `client` with every recall and ingest; dedup queue entries by `toolUseId` where the client provides one
+- [x] Send `client` with every recall and ingest (2026-11-03); dedup queue entries by `toolUseId` where the client provides one (no capture queue yet)
 - [ ] OpenCode / OpenClaw: thin JS plugins that call the same command on their events
 - [ ] Tests: a recorded payload fixture per client through its adapter → the expected internal event; output format per client; the rules file is written, refreshed and removed by uninstall
 

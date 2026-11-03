@@ -393,3 +393,130 @@ class MemoryUploadTest(MemoryHookTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OtherClientsTest(MemoryUploadTest):
+    """Codex and Grok Build: payload shapes, the Codex rollout format, the
+    API key without plugin settings, and the Grok rules file."""
+
+    def codex_rollout(self, name="rollout-2026-11-03T10-00-00-abc.jsonl", folder=None, cwd=None):
+        folder = folder or self.tmp
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name)
+        def item(payload, kind="response_item"):
+            return json.dumps({"type": kind, "payload": payload}) + "\n"
+        with open(path, "w") as f:
+            f.write(item({"id": "abc", "cwd": cwd or self.repo, "cli_version": "0.163.0"}, "session_meta"))
+            f.write(item({"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "You are Codex."}]}))
+            f.write(item({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "<environment_context>\n  <cwd>/x</cwd>\n</environment_context>"}]}))
+            for i in range(3):
+                f.write(item({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Question %d: how does the parser in lib/parse.js handle quoted fields? Explain the edge cases please." % i}]}))
+                f.write(item({"type": "function_call", "name": "shell", "call_id": "c%d" % i, "arguments": json.dumps({"command": ["bash", "-lc", "npm test -- --grep parser%d" % i]})}))
+                f.write(item({"type": "function_call_output", "call_id": "c%d" % i, "output": [{"type": "input_text", "text": "Exit code: 0\n12 passing"}]}))
+                f.write(item({"type": "function_call", "name": "shell", "call_id": "f%d" % i, "arguments": json.dumps({"cmd": "node broken%d.js" % i})}))
+                f.write(item({"type": "function_call_output", "call_id": "f%d" % i, "output": "Exit code: 1\nTypeError: boom"}))
+                f.write(item({"type": "custom_tool_call", "name": "apply_patch", "call_id": "p%d" % i, "input": "*** Begin Patch\n*** Update File: lib/parse%d.js\n@@\n-a\n+b\n*** End Patch" % i}))
+                f.write(item({"type": "custom_tool_call_output", "call_id": "p%d" % i, "output": "Done"}))
+                f.write(item({"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Working on it."}]}))
+                f.write(item({"type": "task_complete", "last_agent_message": "The parser in [[lib/parse.js]] splits on commas outside quotes; token=abcdef0123456789 never logged. " * 2}, "event_msg"))
+        return path
+
+    def test_codex_rollout_is_read_like_a_transcript(self):
+        import excerpt
+        path = self.codex_rollout()
+        text, end, turns = excerpt.build_excerpt(path)
+        self.assertEqual(turns, 3, "the environment_context message is not a prompt")
+        self.assertIn("npm test -- --grep parser0", text)
+        self.assertNotIn("node broken0.js", text.split("FILES EDITED")[0], "failed commands aren't how-to")
+        self.assertIn("TOOL FAILED: Bash(command=node broken2.js)", text)
+        self.assertIn("FILES EDITED: lib/parse0.js, lib/parse1.js, lib/parse2.js", text)
+        self.assertIn("AGENT (final answer): The parser", text)
+        self.assertNotIn("abcdef0123456789", text)
+
+    def test_codex_payload_uploads_with_its_client_name(self):
+        path = self.codex_rollout()
+        env = dict(self.env, PLUGIN_ROOT=ROOT, CLAUDE_PLUGIN_ROOT=ROOT)
+        event = {"session_id": "cx1", "cwd": self.repo, "transcript_path": path,
+                 "hook_event_name": "SessionEnd", "turn_id": "t1", "model": "gpt-5.5"}
+        subprocess.run([sys.executable, SCRIPT, "hook-flush"], input=json.dumps(event),
+                       capture_output=True, text=True, env=env, timeout=10)
+        for _ in range(100):
+            if self.uploads():
+                break
+            time.sleep(0.1)
+        body = self.uploads()[0]["body"]
+        self.assertEqual(body["client"], "codex")
+        self.assertIn("npm test -- --grep parser1", body["excerpt"])
+        out, _ = self.hook(session="cx2", env=env)
+        self.assertEqual(FakeRecall.calls[-1]["body"]["client"], "codex")
+        self.assertIn("additionalContext", json.dumps(out))
+        self.assertFalse(os.path.exists(os.path.join(self.repo, ".grok")), "no rules file outside Grok")
+
+    def test_grok_camelcase_payload_recalls_and_writes_the_rules_file(self):
+        env = dict(self.env, GROK_HOOK_EVENT="UserPromptSubmit", GROK_SESSION_ID="g1", GROK_WORKSPACE_ROOT=self.repo)
+        event = {"hookEventName": "UserPromptSubmit", "sessionId": "g1", "cwd": self.repo, "workspaceRoot": self.repo}
+        result = subprocess.run([sys.executable, SCRIPT, "hook-prompt"], input=json.dumps(event),
+                                capture_output=True, text=True, env=env, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = json.loads(result.stdout)
+        self.assertEqual(out["hookSpecificOutput"]["additionalContext"], BLOCK)
+        self.assertEqual(FakeRecall.calls[-1]["body"]["client"], "grok")
+        rules = os.path.join(self.repo, ".grok", "rules", "infranodus-memory.md")
+        with open(rules) as f:
+            content = f.read()
+        self.assertIn(BLOCK, content)
+        self.assertTrue(content.startswith("<!-- Generated by the InfraNodus memory plugin"))
+        # the same session again: no second recall, file untouched
+        result = subprocess.run([sys.executable, SCRIPT, "hook-prompt"], input=json.dumps(event),
+                                capture_output=True, text=True, env=env, timeout=10)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(len([c for c in FakeRecall.calls if c["path"].endswith("/recall")]), 1)
+
+    def test_key_from_environment_or_set_key_when_there_are_no_plugin_settings(self):
+        env = dict(self.env)
+        env.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
+        env.pop("CLAUDE_PLUGIN_OPTION_API_BASE")
+        out, _ = self.hook(session="k1", env=env)
+        self.assertIsNone(out, "no key anywhere: silent")
+        env["INFRANODUS_API_KEY"] = "envkey"
+        env["INFRANODUS_API_BASE"] = self.base  # not read: base comes from set-key or plugin settings
+        out, _ = self.hook(session="k2", env=dict(env, CLAUDE_PLUGIN_OPTION_API_BASE=self.base))
+        self.assertEqual(FakeRecall.calls[-1]["auth"], "Bearer envkey")
+        env.pop("INFRANODUS_API_KEY")
+        env.pop("INFRANODUS_API_BASE")
+        result = subprocess.run([sys.executable, SCRIPT, "set-key", "storedkey", "--base", self.base],
+                                capture_output=True, text=True, env=env, cwd=self.repo, timeout=10)
+        self.assertIn("stored", result.stdout)
+        self.assertNotIn("storedkey", result.stdout)
+        self.assertEqual(oct(os.stat(os.path.join(self.state, "memory.json")).st_mode & 0o777), "0o600")
+        out, _ = self.hook(session="k3", env=env)
+        self.assertEqual(out["hookSpecificOutput"]["additionalContext"], BLOCK)
+        self.assertEqual(FakeRecall.calls[-1]["auth"], "Bearer storedkey")
+        result = subprocess.run([sys.executable, SCRIPT, "status"], capture_output=True, text=True,
+                                env=env, cwd=self.repo, timeout=10)
+        self.assertIn("API key: set (from %s" % os.path.join(self.state, "memory.json"), result.stdout)
+        subprocess.run([sys.executable, SCRIPT, "clear-key"], capture_output=True, text=True, env=env, cwd=self.repo, timeout=10)
+        out, _ = self.hook(session="k4", env=env)
+        self.assertIsNone(out)
+
+    def test_save_finds_the_codex_rollout_for_this_folder(self):
+        codex_home = os.path.join(self.tmp, "codex-home")
+        self.codex_rollout(folder=os.path.join(codex_home, "sessions", "2026", "11", "02"), cwd="/elsewhere",
+                           name="rollout-2026-11-02T09-00-00-zzz.jsonl")
+        time.sleep(0.05)
+        self.codex_rollout(folder=os.path.join(codex_home, "sessions", "2026", "11", "03"))
+        env = dict(self.env, CODEX_HOME=codex_home, PLUGIN_ROOT=ROOT)
+        result = subprocess.run([sys.executable, SCRIPT, "save"], capture_output=True, text=True,
+                                env=env, cwd=self.repo, timeout=60)
+        self.assertIn("Sent this session", result.stdout, result.stdout)
+        body = self.uploads()[0]["body"]
+        self.assertEqual(body["sessionId"], "abc")
+        self.assertEqual(body["client"], "codex")
+        self.assertIn("lib/parse2.js", body["excerpt"])
+
+    def test_session_end_hook_fits_codex_limit(self):
+        with open(os.path.join(ROOT, "hooks", "hooks.json")) as f:
+            hooks = json.load(f)["hooks"]
+        self.assertLessEqual(hooks["SessionEnd"][0]["hooks"][0]["timeout"], 3)
+        for event in ("UserPromptSubmit", "PreCompact", "SessionEnd"):
+            self.assertIn("${CLAUDE_PLUGIN_ROOT}", hooks[event][0]["hooks"][0]["command"])
