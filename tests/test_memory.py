@@ -40,6 +40,15 @@ class FakeRecall(BaseHTTPRequestHandler):
         if self.path.endswith("/ingest"):
             status = FakeRecall.ingest_status
             payload = {"accepted": status == 202}
+        elif self.path.endswith("/listGraphs"):
+            payload = [
+                {"contextName": "learn-demo-repo", "contextType": "MEMORY"},
+                {"contextName": "learn-other", "contextType": "MEMORY"},
+                {"contextName": "memory-acme", "contextType": "MEMORY"},
+                {"contextName": "memory-handmade", "contextType": "STANDARD"},
+                {"contextName": "personal-alice", "contextType": "MEMORY"},
+                {"contextName": "notes", "contextType": "STANDARD"},
+            ]
         elif self.path.endswith("/memory/forget"):
             payload = {"forgotten": 3, "sessionId": "s0"}
         elif status == 200:
@@ -334,6 +343,15 @@ class MemoryUploadTest(MemoryHookTest):
         self.assertEqual(self.uploads()[0]["body"]["sessionId"], "sess-9")
         self.assertIn("Nothing new to save", run())
         self.assertEqual(len(self.uploads()), 1)
+
+    def test_graphs_lists_this_projects_memory_graphs(self):
+        out = self.command("graphs")
+        self.assertIn("learn-demo-repo: learnings for this project (project name: demo-repo)", out)
+        self.assertIn("memory-acme: topic memory (topic: acme)", out)
+        self.assertIn("personal-alice: personal memory", out)
+        self.assertNotIn("learn-other", out, "another project's learnings")
+        self.assertNotIn("memory-handmade", out, "not a memory graph")
+        self.assertNotIn("notes", out)
 
     def test_404_is_queued_not_dropped(self):
         path = self.transcript()

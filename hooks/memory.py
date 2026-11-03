@@ -621,6 +621,44 @@ def save_now(cwd):
     }.get(outcome, "Nothing was saved (%s)." % outcome)
 
 
+def learnings_graph_name(project):
+    """learn-<slug>, as the app names it (lib/memory/core.js)."""
+    import re
+
+    slug = re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9]+", "-", project.lower())).strip("-")
+    return ("learn-" + (slug or "project")[: 28 - len("learn-")]).rstrip("-")
+
+
+def list_memory_graphs(project):
+    """The memory graphs worth optimizing from this project: its learnings
+    graph, every topic memory graph, and personal memory. Returns a printable
+    list, or an explanation."""
+    key, base = api_settings()
+    if not key:
+        return "The InfraNodus API key isn't set (configure it in /plugin)."
+    try:
+        status, body = post(base, key, "/listGraphs", {"query": ""}, 15)
+    except Exception as error:
+        return "Couldn't reach InfraNodus: %s" % error
+    if status != 200 or not isinstance(body, list):
+        return "InfraNodus refused the graph list (%s)." % status
+    own = learnings_graph_name(project)
+    rows = []
+    for graph in body:
+        name = graph.get("contextName") or ""
+        if str(graph.get("contextType", "")).upper() != "MEMORY":
+            continue
+        if name == own:
+            rows.append((0, "- %s: learnings for this project (project name: %s)" % (name, project)))
+        elif name.startswith("memory-"):
+            rows.append((1, "- %s: topic memory (topic: %s)" % (name, name[len("memory-"):])))
+        elif name.startswith("personal-"):
+            rows.append((2, "- %s: personal memory" % name))
+    if not rows:
+        return "No memory graphs yet for %s: nothing to optimize." % project
+    return "Memory graphs for %s:\n%s" % (project, "\n".join(r for _, r in sorted(rows)))
+
+
 def command(name, cwd):
     project = project_for(cwd)
     if not project:
@@ -643,6 +681,8 @@ def command(name, cwd):
         return "InfraNodus memory is on for %s again." % project
     if name == "save":
         return save_now(cwd)
+    if name == "graphs":
+        return list_memory_graphs(project)
     if name == "forget-last":
         key, base = api_settings()
         if not key:
@@ -705,7 +745,7 @@ def main():
             outcome = "error:%s" % type(error).__name__
         log_timing("upload", project_for(sys.argv[4]), started, outcome)
         return 0
-    if action in ("off", "on", "status", "forget-last", "save"):
+    if action in ("off", "on", "status", "forget-last", "save", "graphs"):
         take_setting_args(sys.argv[2:])
         print(command(action, os.getcwd()))
         return 0
