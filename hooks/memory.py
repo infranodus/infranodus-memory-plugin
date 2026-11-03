@@ -8,8 +8,9 @@ Standard library only, so it starts fast and needs nothing installed.
                               JSON): starts the upload worker and returns
     memory.py ingest-worker   (detached) trims the new part of the session,
                               uploads it to /api/v1/ingest, retries the queue
-    memory.py off|on|status|forget-last
+    memory.py off|on|status|forget-last|save
                               the plugin's commands, for the project in cwd
+                              (save: upload the current session now)
 
 The hook never slows Claude down or gets in its way (design doc, "Performance:
 never slow the agent down"): it does work only on the first prompt of a
@@ -280,6 +281,7 @@ def take_setting_args(argv):
         "--key": "CLAUDE_PLUGIN_OPTION_API_KEY",
         "--base": "CLAUDE_PLUGIN_OPTION_API_BASE",
         "--save": "CLAUDE_PLUGIN_OPTION_SAVE",
+        "--session": "INFRANODUS_SESSION_ID",
     }
     rest, i = [], 0
     while i < len(argv):
@@ -515,7 +517,7 @@ def ingest_worker(transcript, session_id, cwd, event_name):
 
         text, end, turns = excerpt_module.build_excerpt(transcript, start)
         if turns == 0 or len(text) < MIN_EXCERPT_CHARS:
-            if event_name == "PreCompact":
+            if event_name != "SessionEnd":
                 return "too-small"  # keep it for the next upload
             with open(marker, "w") as f:
                 f.write(str(end))
@@ -547,6 +549,78 @@ def ingest_worker(transcript, session_id, cwd, event_name):
 # ---------------------------------------------------------------------------
 
 
+def transcripts_dir(cwd):
+    """Where Claude Code keeps this folder's session transcripts:
+    ~/.claude/projects/<the path with every non-alphanumeric as '-'>."""
+    import re
+
+    root = os.environ.get("INFRANODUS_TRANSCRIPTS") or os.path.join(
+        os.path.expanduser("~"), ".claude", "projects"
+    )
+    return os.path.join(root, re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(cwd)))
+
+
+def current_transcript(cwd, session_id):
+    """(path, session id) of the session to save: the one named by
+    --session when Claude Code filled it in, else the folder's most recently
+    written transcript, which is the session running the command."""
+    folder = transcripts_dir(cwd)
+    if session_id and os.path.isfile(os.path.join(folder, session_id + ".jsonl")):
+        return os.path.join(folder, session_id + ".jsonl"), session_id
+    try:
+        files = [
+            os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")
+        ]
+    except OSError:
+        return None, None
+    if not files:
+        return None, None
+    newest = max(files, key=os.path.getmtime)
+    return newest, os.path.basename(newest)[: -len(".jsonl")]
+
+
+def save_now(cwd):
+    """/infranodus-memory:save: upload the part of the current session not
+    uploaded yet, as the session-end hook would. It stays counted, so the
+    session end sends only what comes after."""
+    started = time.time()
+    settings = load_settings()
+    project = active_project(cwd, settings)
+    if not project:
+        return (
+            "InfraNodus memory isn't running here (it's off for this project, "
+            "the folder is excluded, or it isn't a project), so nothing was saved."
+        )
+    if not api_settings()[0]:
+        return "The InfraNodus API key isn't set (configure it in /plugin)."
+    transcript, session_id = current_transcript(
+        cwd, _setting(os.environ.get("INFRANODUS_SESSION_ID"))
+    )
+    if not transcript:
+        return "Couldn't find this session's transcript, so nothing was saved."
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    outcome = ingest_worker(transcript, session_id, cwd, "Manual")
+    log_timing("save", project, started, outcome)
+    graph = "learn-" + project
+    return {
+        "uploaded": (
+            "Sent this session to InfraNodus (saving: %s). Learnings appear in %s "
+            "within about a minute%s; the next session here says how many were saved."
+            % (
+                save_setting(),
+                graph,
+                ", and facts about clients or subjects, if any, in their memory-<topic> graphs"
+                if save_setting() != "learnings"
+                else "",
+            )
+        ),
+        "too-small": "Nothing new to save since the last save (or too little to be worth it).",
+        "retry": "InfraNodus couldn't be reached; the upload is queued and retried automatically.",
+        "drop": "InfraNodus refused the upload (check the API key and address with /infranodus-memory:status).",
+        "busy": "An upload for this session is already running; try again in a moment.",
+    }.get(outcome, "Nothing was saved (%s)." % outcome)
+
+
 def command(name, cwd):
     project = project_for(cwd)
     if not project:
@@ -567,6 +641,8 @@ def command(name, cwd):
         set_listed(settings, "off", project, False)
         save_settings(settings)
         return "InfraNodus memory is on for %s again." % project
+    if name == "save":
+        return save_now(cwd)
     if name == "forget-last":
         key, base = api_settings()
         if not key:
@@ -629,7 +705,7 @@ def main():
             outcome = "error:%s" % type(error).__name__
         log_timing("upload", project_for(sys.argv[4]), started, outcome)
         return 0
-    if action in ("off", "on", "status", "forget-last"):
+    if action in ("off", "on", "status", "forget-last", "save"):
         take_setting_args(sys.argv[2:])
         print(command(action, os.getcwd()))
         return 0

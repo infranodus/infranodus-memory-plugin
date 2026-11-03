@@ -317,6 +317,24 @@ class MemoryUploadTest(MemoryHookTest):
         self.worker(path, env=odd)
         self.assertEqual(self.uploads()[2]["body"]["save"], "both", "unknown value -> default")
 
+    def test_save_command_uploads_the_current_session_once(self):
+        import re
+        folder = os.path.join(self.tmp, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)))
+        os.makedirs(folder)
+        path = self.transcript()
+        os.replace(path, os.path.join(folder, "sess-9.jsonl"))
+        env = dict(self.env, INFRANODUS_TRANSCRIPTS=os.path.join(self.tmp, "projects"))
+        env.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
+        run = lambda: subprocess.run(
+            [sys.executable, SCRIPT, "save", "--key", "k123", "--base", self.base,
+             "--save", "both", "--session", "${CLAUDE_SESSION_ID}"],
+            capture_output=True, text=True, env=env, cwd=self.repo, timeout=60).stdout
+        out = run()
+        self.assertIn("Sent this session to InfraNodus (saving: both)", out)
+        self.assertEqual(self.uploads()[0]["body"]["sessionId"], "sess-9")
+        self.assertIn("Nothing new to save", run())
+        self.assertEqual(len(self.uploads()), 1)
+
     def test_404_is_queued_not_dropped(self):
         path = self.transcript()
         FakeRecall.ingest_status = 404

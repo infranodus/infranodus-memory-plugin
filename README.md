@@ -48,6 +48,7 @@ is also listed in the InfraNodus skills marketplace.
 | `/infranodus-memory:off` | Turn memory off for the current project on this machine: nothing is recalled or sent. The graph is kept |
 | `/infranodus-memory:on` | Turn it back on |
 | `/infranodus-memory:status` | Show the project name, whether memory is on, and whether the key is set |
+| `/infranodus-memory:save` | Save this session now instead of at its end. Claude also runs it when you ask in plain words ("save what we learned to memory") |
 | `/infranodus-memory:forget-last` | Remove the learnings saved from the last session |
 
 They are namespaced, so they don't clash with Claude Code's own `/memory`.
