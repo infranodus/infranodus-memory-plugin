@@ -23,8 +23,9 @@ is also listed in the InfraNodus skills marketplace.
 
 - **On the first prompt of a session** in a project, it sends the prompt and
   the project name to InfraNodus (`/api/v1/recall`) and gives Claude up to 5
-  related learnings from the project's `learn-<project>` graph, plus at most one
-  gap the memory doesn't cover. Later prompts send nothing.
+  related learnings from the project's `learn-<project>` graph: the direct
+  matches, then learnings linked to them through a shared concept, plus at most
+  one gap the memory doesn't cover. Later prompts send nothing.
 - **At the end of a session** (and before a compaction), it trims what
   happened (your prompts, Claude's final answers, failed tool calls, files
   edited, commands that worked; secrets and `<private>…</private>` text
@@ -50,6 +51,7 @@ is also listed in the InfraNodus skills marketplace.
 | `/infranodus-memory:status` | Show the project name, whether memory is on, and whether the key is set |
 | `/infranodus-memory:save` | Save this session now instead of at its end. Claude also runs it when you ask in plain words ("save what we learned to memory") |
 | `/infranodus-memory:optimize [learnings \| <topic> \| claude \| claude-mem \| mem0 \| all]` | Analyse the project's memory with InfraNodus `optimize_knowledge_base`: its InfraNodus learnings and topic graphs, and also Claude's own memory notes, claude-mem or mem0 when present (sent as they are, not stored). With several, it asks which. Then it proposes statements that bridge the gaps it finds and saves only the ones you approve. Needs the InfraNodus MCP server authenticated in `/mcp` |
+| `/infranodus-memory:recall <concept or question>` | Look something up in memory mid-session, following the graph's links: for a concept, what it is connected to by hop distance and the learnings on those links; for a question, the most relevant learnings, including ones linked through another concept. Claude also runs it when you ask what memory says about something. Needs the InfraNodus MCP server authenticated in `/mcp` |
 | `/infranodus-memory:forget-last` | Remove the learnings saved from the last session |
 
 They are namespaced, so they don't clash with Claude Code's own `/memory`.
