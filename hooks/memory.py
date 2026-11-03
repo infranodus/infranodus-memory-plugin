@@ -245,13 +245,40 @@ def active_project(cwd, settings):
 # ---------------------------------------------------------------------------
 
 
+def _setting(value):
+    """A plugin setting, or "" when it is unset or arrived unsubstituted
+    (a literal ${user_config.x})."""
+    value = (value or "").strip()
+    return "" if value.startswith("${") else value
+
+
 def api_settings():
-    key = os.environ.get("CLAUDE_PLUGIN_OPTION_API_KEY", "").strip()
+    """Hooks get the plugin settings as CLAUDE_PLUGIN_OPTION_* variables.
+    Commands (skills) don't, so their command line passes them as
+    --key / --base, which main() puts into the same variables."""
+    key = _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_KEY"))
     base = (
-        os.environ.get("CLAUDE_PLUGIN_OPTION_API_BASE", "").strip()
+        _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_BASE"))
         or DEFAULT_API_BASE
     ).rstrip("/")
     return key, base
+
+
+def take_setting_args(argv):
+    """Moves --key VALUE / --base VALUE from argv into the environment.
+    The values are never printed."""
+    names = {"--key": "CLAUDE_PLUGIN_OPTION_API_KEY", "--base": "CLAUDE_PLUGIN_OPTION_API_BASE"}
+    rest, i = [], 0
+    while i < len(argv):
+        if argv[i] in names and i + 1 < len(argv):
+            value = _setting(argv[i + 1])
+            if value:
+                os.environ[names[argv[i]]] = value
+            i += 2
+        else:
+            rest.append(argv[i])
+            i += 1
+    return rest
 
 
 def post(base, key, path, body, timeout):
@@ -413,7 +440,9 @@ def _upload(base, key, item):
         return "retry"
     if status in (200, 202):
         return "done"
-    if status == 429 or status >= 500:
+    # 404: the server doesn't have /ingest yet (an older or restarting
+    # server), so keep the upload for later instead of losing it.
+    if status in (404, 429) or status >= 500:
         return "retry"
     return "drop"
 
@@ -581,6 +610,7 @@ def main():
         log_timing("upload", project_for(sys.argv[4]), started, outcome)
         return 0
     if action in ("off", "on", "status", "forget-last"):
+        take_setting_args(sys.argv[2:])
         print(command(action, os.getcwd()))
         return 0
     print("usage: memory.py hook-prompt | hook-flush | off | on | status | forget-last", file=sys.stderr)

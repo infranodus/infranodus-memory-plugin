@@ -304,6 +304,26 @@ class MemoryUploadTest(MemoryHookTest):
         out, _ = self.hook(session="b")
         self.assertNotIn("systemMessage", out)
 
+    def test_404_is_queued_not_dropped(self):
+        path = self.transcript()
+        FakeRecall.ingest_status = 404
+        self.worker(path)
+        self.assertEqual(len(os.listdir(os.path.join(self.state, "queue"))), 1)
+
+    def test_commands_take_the_key_from_arguments_and_never_print_it(self):
+        env = dict(self.env)
+        env.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
+        env.pop("CLAUDE_PLUGIN_OPTION_API_BASE")
+        run = lambda *args: subprocess.run([sys.executable, SCRIPT, *args], capture_output=True,
+                                           text=True, env=env, cwd=self.repo, timeout=10).stdout
+        self.assertIn("API key: missing", run("status"))
+        self.assertIn("API key: missing", run("status", "--key", "${user_config.api_key}"))
+        out = run("status", "--key", "k-secret-123", "--base", self.base)
+        self.assertIn("API key: set", out)
+        self.assertNotIn("k-secret-123", out)
+        self.assertIn("Removed the 3 learnings", run("forget-last", "--key", "k-secret-123", "--base", self.base))
+        self.assertEqual(FakeRecall.calls[-1]["auth"], "Bearer k-secret-123")
+
     def test_forget_last_command(self):
         out = self.command("forget-last")
         self.assertIn("Removed the 3 learnings", out)

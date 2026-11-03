@@ -1,6 +1,6 @@
 {
 	"name": "infranodus-memory",
-	"version": "0.2.0",
+	"version": "0.2.2",
 	"description": "Automatic memory for Claude Code, stored as a knowledge graph in your InfraNodus account: at the end of a session it saves what was learned about the project; at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. On in every project once installed; /infranodus-memory:off stops it for one project.",
 	"author": {
 		"name": "InfraNodus",
@@ -34,6 +34,12 @@
 			"description": "Leave as is unless you run your own InfraNodus server.",
 			"default": "https://infranodus.com/api/v1"
 		},
+		"mcp_url": {
+			"type": "string",
+			"title": "InfraNodus MCP address (optional)",
+			"description": "Leave as is unless you run your own InfraNodus MCP server (e.g. http://localhost:8787/mcp for local testing).",
+			"default": "https://mcp.infranodus.com"
+		},
 		"exclude_paths": {
 			"type": "string",
 			"title": "Folders to leave out (optional)",
@@ -44,7 +50,7 @@
 	"mcpServers": {
 		"infranodus": {
 			"type": "http",
-			"url": "https://mcp.infranodus.com"
+			"url": "${user_config.mcp_url}"
 		}
 	}
 }
