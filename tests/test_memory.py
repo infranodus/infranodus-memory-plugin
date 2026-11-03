@@ -304,6 +304,19 @@ class MemoryUploadTest(MemoryHookTest):
         out, _ = self.hook(session="b")
         self.assertNotIn("systemMessage", out)
 
+    def test_upload_sends_the_save_setting(self):
+        path = self.transcript()
+        self.worker(path)
+        self.assertEqual(self.uploads()[0]["body"]["save"], "both", "default")
+        only = dict(self.env, CLAUDE_PLUGIN_OPTION_SAVE="Learnings")
+        self.transcript(turns=4, append=True)
+        self.worker(path, env=only)
+        self.assertEqual(self.uploads()[1]["body"]["save"], "learnings")
+        odd = dict(self.env, CLAUDE_PLUGIN_OPTION_SAVE="everything")
+        self.transcript(turns=4, append=True)
+        self.worker(path, env=odd)
+        self.assertEqual(self.uploads()[2]["body"]["save"], "both", "unknown value -> default")
+
     def test_404_is_queued_not_dropped(self):
         path = self.transcript()
         FakeRecall.ingest_status = 404

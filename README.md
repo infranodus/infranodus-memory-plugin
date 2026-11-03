@@ -59,6 +59,9 @@ They are namespaced, so they don't clash with Claude Code's own `/memory`.
 - `api_key` (required): your InfraNodus API key, asked for at install and kept
   in your system's secure store. Change it later in `/plugin`.
 - `api_base` (optional): only for your own InfraNodus server.
+- `save` (optional): what sessions save. `both` (the default), `learnings`
+  (how to work in each project) or `memories` (facts about clients,
+  companies, cases, each in its own `memory-<topic>` graph).
 - `exclude_paths` (optional): folders where memory never runs, e.g.
   `~/clients/*, ~/private`.
 - `~/.infranodus/memory.json`: the projects turned off, and the projects you

@@ -264,10 +264,23 @@ def api_settings():
     return key, base
 
 
+SAVE_OPTIONS = ("learnings", "memories", "both")
+
+
+def save_setting():
+    """What uploads keep: both (default), learnings or memories."""
+    value = _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_SAVE")).lower()
+    return value if value in SAVE_OPTIONS else "both"
+
+
 def take_setting_args(argv):
     """Moves --key VALUE / --base VALUE from argv into the environment.
     The values are never printed."""
-    names = {"--key": "CLAUDE_PLUGIN_OPTION_API_KEY", "--base": "CLAUDE_PLUGIN_OPTION_API_BASE"}
+    names = {
+        "--key": "CLAUDE_PLUGIN_OPTION_API_KEY",
+        "--base": "CLAUDE_PLUGIN_OPTION_API_BASE",
+        "--save": "CLAUDE_PLUGIN_OPTION_SAVE",
+    }
     rest, i = [], 0
     while i < len(argv):
         if argv[i] in names and i + 1 < len(argv):
@@ -433,6 +446,7 @@ def _upload(base, key, item):
                 "excerpt": item["excerpt"],
                 "sessionId": item["sessionId"],
                 "client": CLIENT,
+                "save": item.get("save") or "both",
             },
             INGEST_TIMEOUT_S,
         )
@@ -506,7 +520,12 @@ def ingest_worker(transcript, session_id, cwd, event_name):
             with open(marker, "w") as f:
                 f.write(str(end))
             return "too-small"
-        item = {"project": project, "excerpt": text, "sessionId": session_id}
+        item = {
+            "project": project,
+            "excerpt": text,
+            "sessionId": session_id,
+            "save": save_setting(),
+        }
         outcome = _upload(base, key, item)
         if outcome == "retry":
             os.makedirs(_queue_dir(), exist_ok=True)
@@ -569,6 +588,7 @@ def command(name, cwd):
         "Project: %s" % project,
         "Memory: %s for this project (settings: %s)" % (state, settings_path()),
         "API key: %s" % ("set" if key else "missing (configure it in /plugin)"),
+        "Saves: %s" % save_setting(),
     ]
     if base != DEFAULT_API_BASE:
         lines.append("API address: %s" % base)
