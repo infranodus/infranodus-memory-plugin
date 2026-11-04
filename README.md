@@ -1,10 +1,12 @@
-# infranodus-memory-plugin
+# InfraNodus Graph Memory plugin
 
 The `infranodus-memory` plugin: automatic memory for coding agents, stored as
 InfraNodus knowledge graphs in your own account. On the first prompt of a
 session it recalls what earlier sessions learned about the project; at the end
-of a session it saves new learnings. Because memory is a graph, recall can also
-say what the memory is missing.
+of a session it saves new learnings. Because memory is a graph, recall is
+GraphRAG (it follows the links between concepts by hop distance, so it also
+finds learnings reachable only through an intermediate concept) and can say
+what the memory is missing.
 
 Runs in **Claude Code**, **Codex** (OpenAI) and **Grok Build** (xAI) from the
 same files: one `hooks/hooks.json`, one hook runtime, a Claude Code manifest

@@ -1,6 +1,6 @@
 ---
 name: optimize
-description: Optimize the memory of the current project. Runs the InfraNodus optimize_knowledge_base analysis on the project's InfraNodus learnings and topic memory graphs, and also on other memories when present (Claude's own memory notes, claude-mem, mem0), finds the clusters that never connect and the under-developed areas, and proposes new statements that bridge those gaps, to save after the user approves. Use when the user asks to optimize, improve, review or find gaps in their memory or learnings.
+description: Optimize the InfraNodus Graph Memory of the current project. Runs the InfraNodus optimize_knowledge_base graph analysis on the project's InfraNodus learnings and topic memory graphs, and also on other memories when present (Claude's own memory notes, claude-mem, mem0), finds the clusters that never connect and the under-developed areas, and proposes new statements that bridge those gaps, to save after the user approves. Use when the user asks to optimize, improve, review or find gaps in their memory or learnings.
 argument-hint: "[learnings | <topic> | claude | claude-mem | mem0 | all]"
 allowed-tools: Bash(python3:*), Read
 ---

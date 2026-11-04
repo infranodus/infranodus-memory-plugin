@@ -1,6 +1,6 @@
 ---
 name: recall
-description: Look something up in InfraNodus memory mid-session, following the graph's links. For a concept ("what do we know about webpack?", "what is X connected to?") it returns what the concept is connected to, by hop distance, with the learnings on those links; for a question or task it returns the most relevant learnings, including ones linked through an intermediate concept. Use when the user asks what memory or the learnings say about something, or before working on an area the memory may cover.
+description: GraphRAG recall from InfraNodus Graph Memory. Look something up in the project's memory graph mid-session by following its links, instead of matching text. For a concept ("what do we know about webpack?", "what is X connected to?") it returns what the concept is connected to, by hop distance, with the learnings on those links; for a question or task it returns the most relevant learnings, including ones linked through an intermediate concept. Use when the user asks what memory or the learnings say about something, or before working on an area the memory may cover.
 argument-hint: "<concept or question>"
 allowed-tools: Bash(python3:*)
 ---

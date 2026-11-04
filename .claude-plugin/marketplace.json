@@ -1,6 +1,6 @@
 {
 	"name": "infranodus-memory",
-	"description": "The infranodus-memory plugin from its own repo: automatic memory for Claude Code, Codex and Grok Build, stored as a knowledge graph in your InfraNodus account. Also listed in the infranodus/plugins marketplace, next to the other InfraNodus plugins.",
+	"description": "InfraNodus Graph Memory (the infranodus-memory plugin) from its own repo: automatic memory for Claude Code, Codex and Grok Build, stored as a knowledge graph in your InfraNodus account, with GraphRAG recall. Also listed in the infranodus/plugins marketplace, next to the other InfraNodus plugins.",
 	"owner": {
 		"name": "InfraNodus",
 		"url": "https://github.com/infranodus/infranodus-memory-plugin"
@@ -9,7 +9,7 @@
 		{
 			"name": "infranodus-memory",
 			"source": "./",
-			"description": "Automatic memory for Claude Code, stored as a knowledge graph in your InfraNodus account: recalls what earlier sessions learned about the project at the first prompt of a session."
+			"description": "InfraNodus Graph Memory: automatic memory for Claude Code, Codex and Grok Build as a knowledge graph in your InfraNodus account. Saves what each session learned about the project, recalls it on the first prompt of the next one with GraphRAG retrieval along the graph's links, and names a gap the memory does not cover yet."
 		}
 	]
 }

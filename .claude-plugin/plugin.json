@@ -1,7 +1,7 @@
 {
   "name": "infranodus-memory",
   "version": "0.7.0",
-  "description": "Automatic memory for Claude Code, stored as a knowledge graph in your InfraNodus account: at the end of a session it saves what was learned about the project; at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. On in every project once installed; /infranodus-memory:off stops it for one project.",
+  "description": "InfraNodus Graph Memory: automatic memory for Claude Code, stored as a knowledge graph in your InfraNodus account. At the end of a session it saves what was learned about the project; at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. Recall is GraphRAG: it follows the graph's links between concepts by hop distance instead of matching text. On in every project once installed; /infranodus-memory:off stops it for one project.",
   "author": {
     "name": "InfraNodus",
     "url": "https://infranodus.com"

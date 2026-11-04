@@ -1,7 +1,7 @@
 {
 	"name": "infranodus-memory",
 	"interface": {
-		"displayName": "InfraNodus Memory"
+		"displayName": "InfraNodus Graph Memory"
 	},
 	"plugins": [
 		{
