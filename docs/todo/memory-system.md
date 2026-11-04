@@ -41,7 +41,7 @@ Memory must never slow Claude down; see "Performance: never slow the agent down"
 - [x] First-run line: when the project isn't in `told` yet, show the user (a user-facing message, not only `additionalContext`) "InfraNodus memory is on for `<project>` → graph link. `/infranodus-memory:off` to stop for this project." Then add it to `told`
 - [x] Invalid key: hooks do nothing; say so once in the first-run line
 - [x] `/infranodus-memory:off` and `/infranodus-memory:on`: add or remove the project in `~/.infranodus/memory.json` (no server call). The graph is kept; deleting it is a separate, explicit action through the MCP `delete_graph` tool
-- [ ] Version the plugin in `plugin.json` and tag releases; the skills marketplace entry points at this repo
+- [ ] Version the plugin in `plugin.json` and tag releases; the `infranodus/plugins` marketplace entry points at this repo (GitHub source; marketplace name `infranodus-plugins`). This repo's own catalogs are named `infranodus-memory`; the bare name `infranodus` is kept free for a future umbrella marketplace listing skills and plugins together
 - [ ] Release workflow: decide whether to build a zip (hooks don't work in Claude web; probably skip it)
 
 ## Phase 3: session upload and forget

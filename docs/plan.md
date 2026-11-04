@@ -20,7 +20,8 @@ Paths are relative to this repo's root and assume the repos sit side by side in
 | `mcp-server-infranodus` | [`docs/todo/memory-system.md`](../../mcp-server-infranodus/docs/todo/memory-system.md) | MCP tools moved onto the new endpoints, `scope`/`topic`, `enable_memory`, `review_memory` |
 | `infranodus-app` | [`docs/todo/memory-system.md`](../../infranodus-app/docs/todo/memory-system.md) | The single implementation: `/api/v1/learnings/*`, `/memory/*`, `/recall`, `/ingest` |
 | `infranodus-backend` | [`docs/custom-api-quota.md`](../../infranodus-backend/docs/custom-api-quota.md) | How `recall` (API call) and `ingest` (AI call) count against quota |
-| `Skills/InfraNodus-Skills` | [`docs/todo/memory-system.md`](../../Skills/InfraNodus-Skills/docs/todo/memory-system.md) | Marketplace listing for this plugin, `split-test.sh`, edits to `project-learnings` and `infranodus` skills, README privacy table |
+| `infranodus-plugins` | [`README.md`](../../infranodus-plugins/README.md) | Catalog repo (`infranodus-plugins`): entries for this plugin and the core `infranodus` plugin, Claude Code and Codex catalogs |
+| `Skills/InfraNodus-Skills` | [`docs/todo/memory-system.md`](../../Skills/InfraNodus-Skills/docs/todo/memory-system.md) | Edits to `project-learnings` and `infranodus` skills, README privacy table; no marketplace change (the plugin is listed in `infranodus/plugins`) |
 | this repo | [`docs/todo/memory-system.md`](todo/memory-system.md) | The plugin itself: hooks, recall, capture, ingest worker, other clients, tests |
 
 ## Step 1: lock in the design (about a day)
@@ -119,8 +120,10 @@ app todo).
     off list
   - the first-run line, `/infranodus-memory:off` and `/infranodus-memory:on` (local only)
 - [ ] Publish this repo on GitHub first (open in step 1; you)
-- [ ] `Skills/InfraNodus-Skills`: marketplace entry pointing at this repo;
-      extend `tests/split-test.sh`
+- [x] `infranodus/plugins` (catalog repo, marketplace `infranodus-plugins`):
+      entry pointing at this repo; also cross-lists the core `infranodus` plugin
+      from the skills repo. The skills marketplace stays `infranodus-skills`
+      and is not touched (2026-11-04)
 - [ ] Test locally by loading the plugin from this folder, then install it
       from the marketplace
 - **Done when** a new session in a project with an existing `learn-*` graph

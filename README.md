@@ -22,21 +22,27 @@ its published hook contract and not yet run against the real client (see
 ### Claude Code
 
 ```
-/plugin marketplace add infranodus/infranodus-memory-plugin
-/plugin install infranodus-memory@infranodus-memory
+/plugin marketplace add infranodus/plugins
+/plugin install infranodus-memory@infranodus-plugins
 ```
 
-From a local clone: `/plugin marketplace add ~/path/to/infranodus-memory-plugin`,
-then the same install line. Claude Code asks for your API key. Later the plugin
-is also listed in the InfraNodus skills marketplace.
+[`infranodus/plugins`](https://github.com/infranodus/plugins) is the marketplace
+for InfraNodus plugins; it also lists the core `infranodus` plugin (graph tools
+and the `/infranodus` skill). Straight from this repo instead:
+`/plugin marketplace add infranodus/infranodus-memory-plugin`, then
+`/plugin install infranodus-memory@infranodus-memory`; from a local clone,
+`/plugin marketplace add ~/path/to/infranodus-memory-plugin` and the same
+install line. Claude Code asks for your API key. The skills have their own
+marketplace, [`infranodus/skills`](https://github.com/infranodus/skills).
 
 ### Codex (OpenAI)
 
 ```
-codex plugin marketplace add infranodus/infranodus-memory-plugin
+codex plugin marketplace add infranodus/plugins
 ```
 
-Then install `infranodus-memory` from the marketplace in the Codex app or the
+(or `codex plugin marketplace add infranodus/infranodus-memory-plugin` for this
+repo alone). Then install `infranodus-memory` from the marketplace in the Codex app or the
 `/plugins` screen of the CLI, and trust its three hooks in `/hooks` (Codex
 skips untrusted hooks). Codex has no plugin settings screen, so set the API
 key once, from any project folder:
@@ -55,7 +61,7 @@ upload hook meets by handing the work to a background process in about 5 ms.
 ### Grok Build (xAI)
 
 Grok loads Claude Code plugins, marketplaces and hooks as they are, so install
-the Claude Code plugin (the marketplace line above, or `grok --plugin-dir
+the Claude Code plugin (the marketplace lines above, or `grok --plugin-dir
 ~/path/to/infranodus-memory-plugin`), trust the hooks with `/hooks-trust`, and
 set the key with `set-key` or `INFRANODUS_API_KEY` as for Codex. Grok sends
 hooks a camelCase payload (`hookEventName`, `sessionId`, `cwd`,
