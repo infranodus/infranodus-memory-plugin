@@ -82,9 +82,13 @@ to forget. Learnings saved by hand through the tools are removed with
 
 ### Decisions, built as proposed
 
-1. **Approval.** The tools show a dry run before `confirm: true`. Proposal:
-   the user's request is the approval; ask only when the dry run drops or
-   changes a statement.
+1. **Approval.** The user's request is the approval, so `save` and
+   `remember` pass `confirm: true` and write in one call (0.8.1). 0.8.0 ran
+   the tools' dry run first. That was dropped: the confirmed call runs the
+   same checks (it rejects secrets and marks duplicates), and through a
+   claude.ai connector the dry run timed out after 60 s, because the MCP
+   server's approval dialog never reached the client
+   (infranodus/mcp-server-infranodus#29).
 2. **Enabling.** The learnings and memory tools refuse until enabled "on the
    user's request only". Proposal: asking to save counts as that request.
 3. **Name.** `remember` (proposal), or `add`.
