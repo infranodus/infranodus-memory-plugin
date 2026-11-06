@@ -1,7 +1,7 @@
 {
 	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
 	"name": "infranodus-memory",
-	"version": "0.7.0",
+	"version": "0.8.0",
 	"description": "InfraNodus Graph Memory: automatic memory for Codex, stored as a knowledge graph in your InfraNodus account. At the end of a session it saves what was learned about the project; at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. Recall is GraphRAG: it follows the graph's links between concepts by hop distance instead of matching text. On in every project once installed and trusted; /infranodus-memory:off stops it for one project.",
 	"author": {
 		"name": "Nodus Labs",
@@ -21,13 +21,14 @@
 		"recall"
 	],
 	"skills": "./skills/",
-	"mcpServers": "./.mcp.json",
+	"mcpServers": "./mcp.json",
+	"hooks": "./codex/hooks.json",
 	"extensions": {
 		"com.openai": {
 			"interface": {
 				"displayName": "InfraNodus Graph Memory",
 				"shortDescription": "Automatic project memory as a knowledge graph, with GraphRAG recall",
-				"longDescription": "InfraNodus Graph Memory gives Codex a memory of what each session learned about a project. Hooks upload a trimmed, redacted excerpt of the session when it ends; InfraNodus extracts the durable learnings (locations, traps, conventions, decisions with their reasons, workflows) into a learn-<project> knowledge graph in your account; the first prompt of the next session recalls the learnings that match it, plus one gap the memory never connects. Recall is GraphRAG: the plugin follows the links between concepts by hop distance, so it also returns learnings reachable only through an intermediate concept, instead of matching text. The same graph is readable in the InfraNodus web app, in the Obsidian plugin and from any MCP client.\n\nRequirements: an InfraNodus account and API key (set it once with the plugin's set-key command or the INFRANODUS_API_KEY variable), and trusting the plugin's hooks in /hooks. Each session costs one AI call from the account's quota. Nothing is sent from folders without a git repository or project file, from excluded folders, or from projects turned off with /infranodus-memory:off.",
+				"longDescription": "InfraNodus Graph Memory gives Codex a memory of what each session learned about a project. Hooks upload a trimmed, redacted excerpt of the session when it ends; InfraNodus extracts the durable learnings (locations, traps, conventions, decisions with their reasons, workflows) into a learn-<project> knowledge graph in your account; the first prompt of the next session recalls the learnings that match it, plus one gap the memory never connects. Recall is GraphRAG: the plugin follows the links between concepts by hop distance, so it also returns learnings reachable only through an intermediate concept, instead of matching text. The same graph is readable in the InfraNodus web app, in the Obsidian plugin and from any MCP client.\n\nRequirements: an InfraNodus account and API key (set it once with `python3 codex/key.py set-key` in the plugin folder or the INFRANODUS_API_KEY variable), and trusting the plugin's hooks in /hooks. Each session costs one AI call from the account's quota. Nothing is sent from folders without a git repository or project file, from excluded folders, or from projects turned off with /infranodus-memory:off.",
 				"developerName": "Nodus Labs",
 				"category": "Productivity",
 				"capabilities": [

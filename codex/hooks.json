@@ -1,0 +1,37 @@
+{
+	"hooks": {
+		"UserPromptSubmit": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "python3 \"${CLAUDE_PLUGIN_ROOT}/codex/key.py\" hook-prompt",
+						"timeout": 5
+					}
+				]
+			}
+		],
+		"PreCompact": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "python3 \"${CLAUDE_PLUGIN_ROOT}/codex/key.py\" hook-flush",
+						"timeout": 5
+					}
+				]
+			}
+		],
+		"SessionEnd": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "python3 \"${CLAUDE_PLUGIN_ROOT}/codex/key.py\" hook-flush",
+						"timeout": 3
+					}
+				]
+			}
+		]
+	}
+}
