@@ -478,6 +478,17 @@ class MemoryUploadTest(MemoryHookTest):
         self.assertEqual(FakeRecall.calls, [])
         self.assertIsNotNone(self.hook(session="cmd")[0], "and the session's first real prompt still recalls")
 
+    def test_saving_commands_write_in_one_call(self):
+        # A preview call makes the server ask the client for an approval
+        # dialog. Through a claude.ai connector that request never arrived and
+        # the call timed out after a minute. The user asking to save is the
+        # approval, and the confirmed call runs the same checks as the preview.
+        for name in ("save", "remember", "optimize"):
+            with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("confirm: true", text, name)
+            self.assertNotIn("dry run", text.lower(), name)
+
     def test_plugin_files_hold_no_key_handling_of_their_own(self):
         """What Claude Code loads must not read a key from the machine or
         ask Claude Code to paste one into a command."""

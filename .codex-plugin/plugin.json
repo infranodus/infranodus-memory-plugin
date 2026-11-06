@@ -1,7 +1,7 @@
 {
 	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
 	"name": "infranodus-memory",
-	"version": "0.8.0",
+	"version": "0.8.1",
 	"description": "InfraNodus Graph Memory: automatic memory for Codex, stored as a knowledge graph in your InfraNodus account. At the end of a session it saves what was learned about the project; at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. Recall is GraphRAG: it follows the graph's links between concepts by hop distance instead of matching text. On in every project once installed and trusted; /infranodus-memory:off stops it for one project.",
 	"author": {
 		"name": "Nodus Labs",
