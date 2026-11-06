@@ -1,6 +1,6 @@
 # Fix 5: submitting the plugin to Anthropic's directory
 
-**Status:** later. Rewritten 2026-11-06.
+**Status:** after the 0.8.0 release. Final version 2026-11-06.
 **Depends on:** [fix 1](fix-1-key-for-commands.md), [fix 2](fix-2-save-specific-content.md), [fix 4](fix-4-no-own-mcp-server.md).
 **Repos:** this one only.
 
@@ -47,17 +47,16 @@ left in the repository is Codex's key code and the files that mention it.
 
 - [ ] A branch `claude-directory`, rebuilt from main by
       `scripts/release-directory.sh` at each release, without: `codex/`,
-      `.codex-plugin/`, `.agents/`, `tests/`, `experiments/`, `docs/`.
+      `.codex-plugin/`, `.agents/`, `mcp.json`, `tests/`, `experiments/`,
+      `docs/`.
       Enter it in the form's "Branch or tag" field
-- [ ] Move the Codex and Grok instructions (`INFRANODUS_API_KEY`, `set-key`)
-      out of `README.md` into `codex/README.md`, so the main README has no
-      key example
+- [ ] The Codex and Grok instructions (`INFRANODUS_API_KEY`, `set-key`) are
+      in `codex/README.md` (fix 4), so the main README has no key example
 - [ ] Check on the branch: `grep -r -i -E 'INFRANODUS_API_KEY|API_KEY|set-key|environ'`
       finds nothing that reads or names a key
-- [ ] `README.md`, a "What the plugin reads, stores and sends" section ("Describe
-      in the README everything the plugin runs, sends, or fetches"): the key
-      from the install dialog, sent only to infranodus.com; the session
-      excerpt sent to `/ingest`; the files in `~/.infranodus/`
+- [ ] The README's "What is sent and when" section (fix 4) also names the
+      files kept in `~/.infranodus/`, as the checklist asks ("Describe in
+      the README everything the plugin runs, sends, or fetches")
 - [ ] `README.md` and the description: automatic memory needs Claude Code;
       in claude.ai chat and Cowork the plugin gives the memory commands
       through the InfraNodus connector
