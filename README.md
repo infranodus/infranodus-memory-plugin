@@ -73,7 +73,8 @@ install line. The skills have their own marketplace,
 Claude Code is the supported client. The same files also load in Codex
 (OpenAI) and Grok Build (xAI); that support is built on their published hook
 formats and not tested against every release. See
-[`codex/README.md`](codex/README.md).
+[`codex/README.md`](https://github.com/infranodus/infranodus-memory-plugin/blob/master/codex/README.md)
+in the repository.
 
 ## What automatic memory does
 
@@ -160,6 +161,7 @@ For a local InfraNodus server, start Claude Code with
 key in `/plugin`. The key is only sent to infranodus.com or to a server on
 this machine; any other address is refused.
 
-- Build plan, with links to the related plans in other repos: [`docs/plan.md`](docs/plan.md)
-- Tasks for this repo: [`docs/todo/`](docs/todo/)
+- Build plan and tasks: `docs/plan.md` and `docs/todo/` in the
+  [repository](https://github.com/infranodus/infranodus-memory-plugin)
+- The copy for Anthropic's plugin directory: `scripts/release-directory.sh`
 - Design: `mcp-server-infranodus/docs/drafts/infranodus-memory-system.md`

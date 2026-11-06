@@ -17,6 +17,7 @@
   ],
   "homepage": "https://github.com/infranodus/infranodus-memory-plugin",
   "repository": "https://github.com/infranodus/infranodus-memory-plugin",
+  "icon": "./assets/logo.png",
   "documentationUrl": "https://infranodus.com/docs/claude-code-memory-plugin",
   "supportUrl": "https://support.noduslabs.com",
   "privacyPolicyUrl": "https://infranodus.com/about/privacy-policy",
