@@ -96,7 +96,7 @@ class MemoryHookTest(unittest.TestCase):
             INFRANODUS_HOME=self.state,
             INFRANODUS_TRANSCRIPTS=os.path.join(self.tmp, "projects"),
             CLAUDE_PLUGIN_OPTION_API_KEY="k123",
-            CLAUDE_PLUGIN_OPTION_API_BASE=self.base,
+            INFRANODUS_API_BASE=self.base,
         )
         self.env.pop("INFRANODUS_MEMORY_DISABLE", None)
 
@@ -184,11 +184,50 @@ class MemoryHookTest(unittest.TestCase):
         plain = os.path.join(self.tmp, "plain")
         os.makedirs(plain)
         self.assertIsNone(self.hook(cwd=plain)[0])
-        no_key = dict(self.env, CLAUDE_PLUGIN_OPTION_API_KEY="")
-        self.assertIsNone(self.hook(session="s2", env=no_key)[0])
         disabled = dict(self.env, INFRANODUS_MEMORY_DISABLE="1")
         self.assertIsNone(self.hook(session="s3", env=disabled)[0])
         self.assertEqual(FakeRecall.calls, [])
+
+    def test_no_key_sends_nothing_and_says_once_per_project_how_to_add_one(self):
+        no_key = dict(self.env)
+        no_key.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
+        out, _ = self.hook(session="n1", env=no_key)
+        self.assertEqual(
+            out, {"systemMessage": "InfraNodus memory: add an API key in /plugin to turn on "
+                                   "automatic memory for demo-repo."})
+        self.assertIsNone(self.hook(session="n1", env=no_key)[0], "later prompts: silent")
+        self.assertIsNone(self.hook(session="n2", env=no_key)[0], "next session: said only once")
+        for unset in ("", "${user_config.api_key}", "[sensitive option 'api_key' not available in skill content]"):
+            self.assertIsNone(self.hook(session="n3" + unset[:2], env=dict(no_key, CLAUDE_PLUGIN_OPTION_API_KEY=unset))[0])
+        self.assertEqual(FakeRecall.calls, [])
+        out, _ = self.hook(session="n4")
+        self.assertIn("InfraNodus memory is on for demo-repo", out["systemMessage"], "with a key: the usual notice")
+
+    def test_the_key_is_read_from_the_plugin_setting_only(self):
+        other = dict(self.env, INFRANODUS_API_KEY="envkey")
+        other.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
+        os.makedirs(self.state, exist_ok=True)
+        with open(os.path.join(self.state, "memory.json"), "w") as f:
+            json.dump({"apiKey": "storedkey", "toldNoKey": ["demo-repo"]}, f)
+        self.assertIsNone(self.hook(session="o1", env=other)[0])
+        self.assertEqual(FakeRecall.calls, [], "no other variable and no file gives the script a key")
+
+    def test_the_key_is_sent_only_to_infranodus_or_this_machine(self):
+        self.assertTrue(memory.key_allowed_for("https://infranodus.com/api/v1"))
+        self.assertTrue(memory.key_allowed_for("https://eu.infranodus.com/api/v1"))
+        self.assertTrue(memory.key_allowed_for("http://localhost:3000/api/v1"))
+        self.assertTrue(memory.key_allowed_for(self.base))
+        for url in ("https://infranodus.com.evil.example/api/v1", "https://example.com/api/v1",
+                    "https://notinfranodus.com/api/v1", "nonsense"):
+            self.assertFalse(memory.key_allowed_for(url), url)
+        elsewhere = dict(self.env, INFRANODUS_API_BASE="http://192.0.2.1:9/api/v1")
+        out, elapsed = self.hook(session="h1", env=elsewhere)
+        self.assertIsNone(out)
+        self.assertLess(elapsed, 1.5, "no request is even attempted")
+        result = subprocess.run([sys.executable, SCRIPT, "status"], capture_output=True, text=True,
+                                env=elsewhere, cwd=self.repo, timeout=10).stdout
+        self.assertIn("not infranodus.com or this machine", result)
+        self.assertNotIn("k123", result)
 
     def test_rejected_key_is_said_once_and_errors_are_silent(self):
         FakeRecall.status = 401
@@ -334,10 +373,8 @@ class MemoryUploadTest(MemoryHookTest):
         path = self.transcript()
         os.replace(path, os.path.join(folder, "sess-9.jsonl"))
         env = dict(self.env, INFRANODUS_TRANSCRIPTS=os.path.join(self.tmp, "projects"))
-        env.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
         run = lambda: subprocess.run(
-            [sys.executable, SCRIPT, "save", "--key", "k123", "--base", self.base,
-             "--save", "both", "--session", "${CLAUDE_SESSION_ID}"],
+            [sys.executable, SCRIPT, "save"],
             capture_output=True, text=True, env=env, cwd=self.repo, timeout=60).stdout
         out = run()
         self.assertIn("Sent this session to InfraNodus (saving: both)", out)
@@ -370,19 +407,98 @@ class MemoryUploadTest(MemoryHookTest):
         self.worker(path)
         self.assertEqual(len(os.listdir(os.path.join(self.state, "queue"))), 1)
 
-    def test_commands_take_the_key_from_arguments_and_never_print_it(self):
+    def expansion(self, name, args="", env=None, **extra):
+        """The UserPromptExpansion hook, as Claude Code calls it for a typed
+        /infranodus-memory:<name> <args>."""
+        event = dict({
+            "hook_event_name": "UserPromptExpansion", "expansion_type": "slash_command",
+            "command_name": "infranodus-memory:" + name, "command_args": args,
+            "command_source": "plugin", "prompt": ("/infranodus-memory:%s %s" % (name, args)).strip(),
+            "session_id": "sx", "cwd": self.repo,
+        }, **extra)
+        result = subprocess.run([sys.executable, SCRIPT, "hook-command"], input=json.dumps(event),
+                                capture_output=True, text=True, env=env or self.env, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        if not result.stdout.strip():
+            return None
+        out = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "UserPromptExpansion")
+        self.assertTrue(out["additionalContext"].startswith("[infranodus-memory] "))
+        return out["additionalContext"]
+
+    def test_typed_commands_work_through_the_hook_with_a_key(self):
+        out = self.expansion("status")
+        self.assertIn("Project: demo-repo (learnings graph: learn-demo-repo)", out)
+        self.assertIn("API key: set", out)
+        self.assertIn("Automatic memory: active", out)
+        self.assertNotIn("k123", out, "the key is never printed")
+        out = self.expansion("recall", "how do I run the tests")
+        self.assertIn(BLOCK, out)
+        self.assertIn("- learn-demo-repo: learnings for this project", out)
+        recall = [c for c in FakeRecall.calls if c["path"].endswith("/recall")][-1]
+        self.assertEqual(recall["body"]["prompt"], "how do I run the tests")
+        self.assertEqual(recall["auth"], "Bearer k123")
+        out = self.expansion("forget-last")
+        self.assertIn("Removed the 3 learnings", out)
+        path = self.transcript()
+        out = self.expansion("save", transcript_path=path, session_id="typed-1")
+        self.assertIn("Sent this session to InfraNodus", out)
+        self.assertEqual(self.uploads()[-1]["body"]["sessionId"], "typed-1")
+        self.assertIn("off for demo-repo", self.expansion("off"))
+        self.assertIn("inactive: memory is off", self.expansion("status"))
+        self.assertIn("on for demo-repo again", self.expansion("on"))
+
+    def test_typed_commands_without_a_key_send_nothing_and_point_to_the_tools(self):
         env = dict(self.env)
         env.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
-        env.pop("CLAUDE_PLUGIN_OPTION_API_BASE")
-        run = lambda *args: subprocess.run([sys.executable, SCRIPT, *args], capture_output=True,
-                                           text=True, env=env, cwd=self.repo, timeout=10).stdout
-        self.assertIn("API key: missing", run("status"))
-        self.assertIn("API key: missing", run("status", "--key", "${user_config.api_key}"))
-        out = run("status", "--key", "k-secret-123", "--base", self.base)
-        self.assertIn("API key: set", out)
-        self.assertNotIn("k-secret-123", out)
-        self.assertIn("Removed the 3 learnings", run("forget-last", "--key", "k-secret-123", "--base", self.base))
-        self.assertEqual(FakeRecall.calls[-1]["auth"], "Bearer k-secret-123")
+        out = self.expansion("status", env=env)
+        self.assertIn("API key: not set", out)
+        self.assertIn("Automatic memory: inactive: no API key. Add one in /plugin", out)
+        out = self.expansion("recall", "webpack", env=env)
+        self.assertIn("learn-demo-repo", out)
+        self.assertIn("InfraNodus tools", out)
+        out = self.expansion("save", transcript_path=self.transcript(), env=env)
+        self.assertIn("Nothing was uploaded", out)
+        self.assertIn("add_project_learnings", out)
+        self.assertIn("needs the key", self.expansion("forget-last", env=env))
+        self.assertIn("learn-demo-repo", self.expansion("remember", "these rules", env=env))
+        self.assertIn("list_graphs", self.expansion("optimize", env=env))
+        self.assertEqual(FakeRecall.calls, [])
+
+    def test_the_hook_ignores_other_commands_and_never_fails(self):
+        self.assertIsNone(self.expansion("status", command_name="other-plugin:status"))
+        self.assertIsNone(self.expansion("status", command_name="infranodus-memory:unknown"))
+        self.assertIn("isn't a project", self.expansion("status", cwd=os.path.join(self.tmp)))
+        result = subprocess.run([sys.executable, SCRIPT, "hook-command"], input="not json",
+                                capture_output=True, text=True, env=self.env, timeout=10)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        out, _ = self.hook(session="cmd", prompt="/infranodus-memory:status")
+        self.assertIsNone(out, "the prompt hook leaves a typed command to the expansion hook")
+        self.assertEqual(FakeRecall.calls, [])
+        self.assertIsNotNone(self.hook(session="cmd")[0], "and the session's first real prompt still recalls")
+
+    def test_plugin_files_hold_no_key_handling_of_their_own(self):
+        """What Claude Code loads must not read a key from the machine or
+        ask Claude Code to paste one into a command."""
+        banned = ("INFRANODUS_API_KEY", "set-key", "user_config.api_key", "--key")
+        files = [os.path.join(ROOT, "hooks", n) for n in ("memory.py", "excerpt.py", "hooks.json")]
+        files.append(os.path.join(ROOT, ".claude-plugin", "plugin.json"))
+        for folder, _dirs, names in os.walk(os.path.join(ROOT, "skills")):
+            files += [os.path.join(folder, n) for n in names]
+        for path in files:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            for word in banned:
+                self.assertNotIn(word, text, "%s in %s" % (word, os.path.relpath(path, ROOT)))
+        with open(os.path.join(ROOT, ".claude-plugin", "plugin.json")) as f:
+            manifest = json.load(f)
+        self.assertNotIn("mcpServers", manifest)
+        self.assertEqual(sorted(manifest["userConfig"]), ["api_key", "exclude_paths", "save"])
+        self.assertFalse(manifest["userConfig"]["api_key"].get("required"))
+        self.assertTrue(manifest["userConfig"]["api_key"]["sensitive"])
+        self.assertFalse(os.path.exists(os.path.join(ROOT, ".mcp.json")),
+                         "Claude Code would load a root .mcp.json as the plugin's server")
 
     def test_forget_last_command(self):
         out = self.command("forget-last")
@@ -472,32 +588,37 @@ class OtherClientsTest(MemoryUploadTest):
         self.assertEqual(result.stdout, "")
         self.assertEqual(len([c for c in FakeRecall.calls if c["path"].endswith("/recall")]), 1)
 
-    def test_key_from_environment_or_set_key_when_there_are_no_plugin_settings(self):
+    def test_codex_wrapper_supplies_the_key_when_there_are_no_plugin_settings(self):
+        wrapper = os.path.join(ROOT, "codex", "key.py")
         env = dict(self.env)
         env.pop("CLAUDE_PLUGIN_OPTION_API_KEY")
-        env.pop("CLAUDE_PLUGIN_OPTION_API_BASE")
-        out, _ = self.hook(session="k1", env=env)
-        self.assertIsNone(out, "no key anywhere: silent")
-        env["INFRANODUS_API_KEY"] = "envkey"
-        env["INFRANODUS_API_BASE"] = self.base  # not read: base comes from set-key or plugin settings
-        out, _ = self.hook(session="k2", env=dict(env, CLAUDE_PLUGIN_OPTION_API_BASE=self.base))
+
+        def hook(session, env):
+            event = {"session_id": session, "prompt": "how do I run the tests", "cwd": self.repo}
+            result = subprocess.run([sys.executable, wrapper, "hook-prompt"], input=json.dumps(event),
+                                    capture_output=True, text=True, env=env, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout) if result.stdout.strip() else None
+
+        out = hook("k1", env)
+        self.assertIn("add an API key", out["systemMessage"], "no key anywhere: the notice, nothing sent")
+        self.assertEqual(FakeRecall.calls, [])
+        hook("k2", dict(env, INFRANODUS_API_KEY="envkey"))
         self.assertEqual(FakeRecall.calls[-1]["auth"], "Bearer envkey")
-        env.pop("INFRANODUS_API_KEY")
-        env.pop("INFRANODUS_API_BASE")
-        result = subprocess.run([sys.executable, SCRIPT, "set-key", "storedkey", "--base", self.base],
+        result = subprocess.run([sys.executable, wrapper, "set-key", "storedkey"],
                                 capture_output=True, text=True, env=env, cwd=self.repo, timeout=10)
         self.assertIn("stored", result.stdout)
         self.assertNotIn("storedkey", result.stdout)
         self.assertEqual(oct(os.stat(os.path.join(self.state, "memory.json")).st_mode & 0o777), "0o600")
-        out, _ = self.hook(session="k3", env=env)
+        out = hook("k3", env)
         self.assertEqual(out["hookSpecificOutput"]["additionalContext"], BLOCK)
         self.assertEqual(FakeRecall.calls[-1]["auth"], "Bearer storedkey")
-        result = subprocess.run([sys.executable, SCRIPT, "status"], capture_output=True, text=True,
+        result = subprocess.run([sys.executable, wrapper, "status"], capture_output=True, text=True,
                                 env=env, cwd=self.repo, timeout=10)
-        self.assertIn("API key: set (from %s" % os.path.join(self.state, "memory.json"), result.stdout)
-        subprocess.run([sys.executable, SCRIPT, "clear-key"], capture_output=True, text=True, env=env, cwd=self.repo, timeout=10)
-        out, _ = self.hook(session="k4", env=env)
-        self.assertIsNone(out)
+        self.assertIn("API key: set", result.stdout)
+        self.assertNotIn("storedkey", result.stdout)
+        subprocess.run([sys.executable, wrapper, "clear-key"], capture_output=True, text=True, env=env, cwd=self.repo, timeout=10)
+        self.assertIsNone(hook("k4", env))
 
     def test_save_finds_the_codex_rollout_for_this_folder(self):
         codex_home = os.path.join(self.tmp, "codex-home")
@@ -518,5 +639,13 @@ class OtherClientsTest(MemoryUploadTest):
         with open(os.path.join(ROOT, "hooks", "hooks.json")) as f:
             hooks = json.load(f)["hooks"]
         self.assertLessEqual(hooks["SessionEnd"][0]["hooks"][0]["timeout"], 3)
+        for event in ("UserPromptSubmit", "UserPromptExpansion", "PreCompact", "SessionEnd"):
+            self.assertIn("${CLAUDE_PLUGIN_ROOT}/hooks/memory.py", hooks[event][0]["hooks"][0]["command"])
+        with open(os.path.join(ROOT, "codex", "hooks.json")) as f:
+            codex = json.load(f)["hooks"]
+        self.assertLessEqual(codex["SessionEnd"][0]["hooks"][0]["timeout"], 3)
         for event in ("UserPromptSubmit", "PreCompact", "SessionEnd"):
-            self.assertIn("${CLAUDE_PLUGIN_ROOT}", hooks[event][0]["hooks"][0]["command"])
+            self.assertIn("${CLAUDE_PLUGIN_ROOT}/codex/key.py", codex[event][0]["hooks"][0]["command"])
+        with open(os.path.join(ROOT, ".codex-plugin", "plugin.json")) as f:
+            manifest = json.load(f)
+        self.assertEqual((manifest["hooks"], manifest["mcpServers"]), ("./codex/hooks.json", "./mcp.json"))

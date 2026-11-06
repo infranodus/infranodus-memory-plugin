@@ -6,14 +6,24 @@ Standard library only, so it starts fast and needs nothing installed.
     memory.py hook-prompt     UserPromptSubmit hook (stdin: the hook JSON)
     memory.py hook-flush      PreCompact / SessionEnd hook (stdin: the hook
                               JSON): starts the upload worker and returns
+    memory.py hook-command    UserPromptExpansion hook (stdin: the hook JSON):
+                              the user typed /infranodus-memory:<command>;
+                              does what needs the API key and hands the
+                              result to the agent as context
     memory.py ingest-worker   (detached) trims the new part of the session,
                               uploads it to /api/v1/ingest, retries the queue
-    memory.py off|on|status|forget-last|save
-                              the plugin's commands, for the project in cwd
-                              (save: upload the current session now)
-    memory.py set-key KEY [--base URL] | clear-key
-                              store the API key for clients that have no
-                              plugin settings (Codex, Grok Build)
+    memory.py off|on|status|save|forget-last|recall QUERY|optimize|remember
+                              the same commands from a shell, for the project
+                              in cwd (clients without the expansion hook)
+
+The API key is optional and has one source: the plugin's settings. Claude Code
+hands every plugin option to the plugin's hooks as CLAUDE_PLUGIN_OPTION_*, and
+leaves the variable out when the user left the option empty. The key is read
+from no other variable and from no file, and it is only ever sent to
+infranodus.com or to a server on this machine. Without a key the hooks send
+nothing; the commands then work through the InfraNodus MCP tools the agent has
+(the user's InfraNodus connector), which need no key here. Clients without
+plugin settings (Codex, Grok Build) go through codex/key.py.
 
 Clients: Claude Code and Codex run the same hooks.json and send the same
 snake_case payload (session_id, cwd, prompt, transcript_path); Grok Build
@@ -30,8 +40,8 @@ prints nothing and exits 0.
 
 Local state lives in ~/.infranodus/ (design doc, "Where memory state lives"):
     memory.json     {"off": [projects], "told": [projects], "keyWarned": bool,
-                     "reported": {project: last session reported as saved},
-                     "apiKey", "apiBase": set by `set-key` (Codex, Grok)}
+                     "toldNoKey": [projects told once how to add a key],
+                     "reported": {project: last session reported as saved}}
     sessions/<id>   one empty file per session that already had its recall
     uploaded/<id>   the transcript line up to which the session was uploaded
     queue/*.json    uploads that failed, retried by the next worker
@@ -50,6 +60,10 @@ CLIENTS = ("claude-code", "codex", "grok")
 GROK_RULES_FILE = os.path.join(".grok", "rules", "infranodus-memory.md")
 DEFAULT_API_BASE = "https://infranodus.com/api/v1"
 RECALL_TIMEOUT_S = 2.0
+COMMAND_TIMEOUT_S = 15.0  # a typed command may wait; a prompt may not
+COMMAND_PREFIX = "infranodus-memory:"
+COMMANDS = ("off", "on", "status", "save", "forget-last", "recall", "optimize", "remember")
+LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
 INGEST_TIMEOUT_S = 30.0
 MIN_EXCERPT_CHARS = 500  # less than this carries nothing worth an AI call
 QUEUE_MAX_AGE_S = 7 * 24 * 3600
@@ -325,38 +339,49 @@ def active_project(cwd, settings):
 
 
 def _setting(value):
-    """A plugin setting, or "" when it is unset or arrived unsubstituted
-    (a literal ${user_config.x})."""
+    """A plugin setting, or "" when it is unset or arrived unsubstituted (a
+    literal ${user_config.x}, or the placeholder Claude Code puts where it
+    does not pass a sensitive option on)."""
     value = (value or "").strip()
-    return "" if value.startswith("${") else value
+    if value.startswith("${") or value.startswith("[sensitive option"):
+        return ""
+    return value
+
+
+def plugin_key():
+    """The API key from the plugin's settings, or "". Claude Code gives the
+    plugin's hooks each option the user filled in as CLAUDE_PLUGIN_OPTION_*;
+    an option left empty is not passed at all. Nothing else is read: no
+    other variable, no file."""
+    return _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_KEY"))
+
+
+def api_base():
+    """The production API. INFRANODUS_API_BASE overrides it for development."""
+    return (_setting(os.environ.get("INFRANODUS_API_BASE")) or DEFAULT_API_BASE).rstrip("/")
+
+
+def key_allowed_for(url):
+    """The key is an InfraNodus credential: it may only reach InfraNodus's
+    own hosts or a server on this machine."""
+    import urllib.parse
+
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == "infranodus.com" or host.endswith(".infranodus.com") or host in LOOPBACK_HOSTS
 
 
 def api_settings():
-    """Hooks get the plugin settings as CLAUDE_PLUGIN_OPTION_* variables in
-    Claude Code. Commands (skills) don't, so their command line passes them
-    as --key / --base, which main() puts into the same variables. Codex and
-    Grok have no plugin settings: there the key comes from INFRANODUS_API_KEY
-    or from `memory.py set-key`, which stores it in memory.json."""
-    key = _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_KEY")) or _setting(
-        os.environ.get("INFRANODUS_API_KEY")
-    )
-    base = _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_BASE"))
-    if not key or not base:
-        stored = load_settings()
-        key = key or _setting(stored.get("apiKey"))
-        base = base or _setting(stored.get("apiBase"))
-    return key, (base or DEFAULT_API_BASE).rstrip("/")
-
-
-def key_source():
-    """Where the key in use comes from, for /status."""
-    if _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_KEY")):
-        return "plugin settings"
-    if _setting(os.environ.get("INFRANODUS_API_KEY")):
-        return "INFRANODUS_API_KEY"
-    if _setting(load_settings().get("apiKey")):
-        return settings_path()
-    return ""
+    """(key, base). The key is "" when none is set, and also when the API
+    address is not one the key may be sent to, so no caller can send it
+    there."""
+    base = api_base()
+    key = plugin_key()
+    if key and not key_allowed_for(base):
+        key = ""
+    return key, base
 
 
 SAVE_OPTIONS = ("learnings", "memories", "both")
@@ -366,28 +391,6 @@ def save_setting():
     """What uploads keep: both (default), learnings or memories."""
     value = _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_SAVE")).lower()
     return value if value in SAVE_OPTIONS else "both"
-
-
-def take_setting_args(argv):
-    """Moves --key VALUE / --base VALUE from argv into the environment.
-    The values are never printed."""
-    names = {
-        "--key": "CLAUDE_PLUGIN_OPTION_API_KEY",
-        "--base": "CLAUDE_PLUGIN_OPTION_API_BASE",
-        "--save": "CLAUDE_PLUGIN_OPTION_SAVE",
-        "--session": "INFRANODUS_SESSION_ID",
-    }
-    rest, i = [], 0
-    while i < len(argv):
-        if argv[i] in names and i + 1 < len(argv):
-            value = _setting(argv[i + 1])
-            if value:
-                os.environ[names[argv[i]]] = value
-            i += 2
-        else:
-            rest.append(argv[i])
-            i += 1
-    return rest
 
 
 def post(base, key, path, body, timeout):
@@ -420,18 +423,35 @@ def post(base, key, path, body, timeout):
 # ---------------------------------------------------------------------------
 
 
+def no_key_notice(project):
+    where = "in /plugin" if CLIENT == "claude-code" else "(see codex/README.md in the plugin folder)"
+    return (
+        "InfraNodus memory: add an API key %s to turn on automatic memory for %s."
+        % (where, project)
+    )
+
+
 def hook_prompt(event):
     """Returns the hook's JSON output (dict) or None for no output."""
     settings = load_settings()
     project = active_project(event.get("cwd") or os.getcwd(), settings)
     if not project:
         return None
+    if (event.get("prompt") or "").lstrip().startswith("/" + COMMAND_PREFIX):
+        return None  # one of the plugin's commands: hook-command answers it
     if not first_prompt_of_session(event.get("session_id")):
         return None
 
     key, base = api_settings()
     if not key:
-        return None
+        # No key was set: say once per project how to turn automatic memory
+        # on, then stay silent. A key that is set but may not be sent to the
+        # configured address says nothing here (status explains it).
+        if plugin_key() or listed(settings, "toldNoKey", project):
+            return None
+        set_listed(settings, "toldNoKey", project, True)
+        save_settings(settings)
+        return {"systemMessage": no_key_notice(project)}
     status, body = post(
         base,
         key,
@@ -707,10 +727,11 @@ def codex_transcript(cwd):
     return (best[1], best[2]) if best else (None, None)
 
 
-def save_now(cwd):
+def save_now(cwd, transcript=None, session_id=None):
     """/infranodus-memory:save: upload the part of the current session not
     uploaded yet, as the session-end hook would. It stays counted, so the
-    session end sends only what comes after."""
+    session end sends only what comes after. The hook passes the session's
+    transcript; from a shell it is looked up."""
     started = time.time()
     settings = load_settings()
     project = active_project(cwd, settings)
@@ -720,10 +741,15 @@ def save_now(cwd):
             "the folder is excluded, or it isn't a project), so nothing was saved."
         )
     if not api_settings()[0]:
-        return "The InfraNodus API key isn't set (configure it in /plugin)."
-    transcript, session_id = current_transcript(
-        cwd, _setting(os.environ.get("INFRANODUS_SESSION_ID"))
-    )
+        return (
+            "%s Nothing was uploaded. Save what this session learned with the "
+            "InfraNodus tools instead: add_project_learnings, project \"%s\"."
+            % (no_key_line(), project)
+        )
+    if not (transcript and session_id and os.path.isfile(transcript)):
+        transcript, session_id = current_transcript(
+            cwd, _setting(os.environ.get("INFRANODUS_SESSION_ID"))
+        )
     if not transcript:
         return "Couldn't find this session's transcript, so nothing was saved."
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -744,7 +770,7 @@ def save_now(cwd):
         ),
         "too-small": "Nothing new to save since the last save (or too little to be worth it).",
         "retry": "InfraNodus couldn't be reached; the upload is queued and retried automatically.",
-        "drop": "InfraNodus refused the upload (check the API key and address with /infranodus-memory:status).",
+        "drop": "InfraNodus refused the upload (check the API key in /plugin; /infranodus-memory:status shows what is set).",
         "busy": "An upload for this session is already running; try again in a moment.",
     }.get(outcome, "Nothing was saved (%s)." % outcome)
 
@@ -763,9 +789,9 @@ def list_memory_graphs(project):
     list, or an explanation."""
     key, base = api_settings()
     if not key:
-        return "The InfraNodus API key isn't set (configure it in /plugin)."
+        return "%s List the memory graphs with the InfraNodus list_graphs tool." % no_key_line()
     try:
-        status, body = post(base, key, "/listGraphs", {"query": ""}, 15)
+        status, body = post(base, key, "/listGraphs", {"query": ""}, COMMAND_TIMEOUT_S)
     except Exception as error:
         return "Couldn't reach InfraNodus: %s" % error
     if status != 200 or not isinstance(body, list):
@@ -802,83 +828,203 @@ def claude_memory_files(cwd):
     return "Claude's own memory for this folder: %d notes in %s" % (len(files), folder)
 
 
-def command(name, cwd):
-    project = project_for(cwd)
-    if not project:
+def no_key_line():
+    """Why the API is not used, for the agent to act on."""
+    if plugin_key():  # set, but the address is not one the key may reach
         return (
-            "This folder isn't a project (no git repo or project file found), "
-            "so InfraNodus memory doesn't run here anyway."
+            "The API key is set but not sent: the API address %s is not "
+            "infranodus.com or this machine." % api_base()
         )
-    settings = load_settings()
-    if name == "off":
-        set_listed(settings, "off", project, True)
-        save_settings(settings)
-        return (
-            "InfraNodus memory is now off for %s on this machine: nothing is "
-            "recalled or sent for it. The graph learn-%s is kept; "
-            "/infranodus-memory:on turns memory back on." % (project, project)
-        )
-    if name == "on":
-        set_listed(settings, "off", project, False)
-        save_settings(settings)
-        return "InfraNodus memory is on for %s again." % project
-    if name == "save":
-        return save_now(cwd)
-    if name == "set-key":
-        key = _setting(os.environ.get("INFRANODUS_NEW_KEY"))
-        if not key:
-            return "Usage: memory.py set-key YOUR_INFRANODUS_API_KEY [--base URL]"
-        settings["apiKey"] = key
-        base = _setting(os.environ.get("CLAUDE_PLUGIN_OPTION_API_BASE"))
-        if base:
-            settings["apiBase"] = base.rstrip("/")
-        save_settings(settings)
-        try:
-            os.chmod(settings_path(), 0o600)
-        except OSError:
-            pass
-        return (
-            "InfraNodus API key stored in %s for clients without plugin settings "
-            "(Codex, Grok Build). Claude Code keeps using the key from /plugin." % settings_path()
-        )
-    if name == "clear-key":
-        settings.pop("apiKey", None)
-        settings.pop("apiBase", None)
-        save_settings(settings)
-        return "Stored API key removed from %s." % settings_path()
-    if name == "graphs":
-        return list_memory_graphs(project) + "\n\n" + claude_memory_files(cwd)
-    if name == "forget-last":
-        key, base = api_settings()
-        if not key:
-            return "The InfraNodus API key isn't set (configure it in /plugin)."
-        try:
-            status, body = post(base, key, "/memory/forget", {"project": project}, 15)
-        except Exception as error:
-            return "Couldn't reach InfraNodus: %s" % error
-        if status != 200 or not isinstance(body, dict):
-            return "InfraNodus refused (%s): %s" % (status, (body or {}).get("error", ""))
-        count = body.get("forgotten", 0)
-        if not count:
-            return body.get("message") or "Nothing to forget for %s." % project
-        return "Removed the %d learning%s saved from the last session in %s." % (
-            count, "" if count == 1 else "s", project)
-    state = "off" if listed(settings, "off", project) else "on"
+    return "No API key is set in the plugin's settings."
+
+
+def project_line(project):
+    return "Project: %s (learnings graph: %s)" % (project, learnings_graph_name(project))
+
+
+def last_runs(project):
+    """When the hooks last recalled and uploaded for the project, read from
+    timings.log: (recall, upload), each "time outcome" or ""."""
+    recall = upload = ""
+    try:
+        with open(os.path.join(home_dir(), "timings.log"), encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 5 or parts[2] != project:
+                    continue
+                when = parts[0].replace("T", " ")[:16]
+                if parts[1] == "prompt" and parts[4] != "skipped":
+                    recall = "%s (%s)" % (when, parts[4])
+                elif parts[1] in ("upload", "save"):
+                    upload = "%s (%s)" % (when, parts[4])
+    except OSError:
+        pass
+    return recall, upload
+
+
+def status_text(project, settings):
+    off = listed(settings, "off", project)
     key, base = api_settings()
+    if os.environ.get("INFRANODUS_MEMORY_DISABLE") == "1":
+        automatic = "inactive: INFRANODUS_MEMORY_DISABLE is set"
+    elif off:
+        automatic = "inactive: memory is off for this project (/infranodus-memory:on turns it on)"
+    elif not key:
+        automatic = "inactive: " + (
+            no_key_line() if plugin_key()
+            else "no API key. Add one in /plugin to turn it on" if CLIENT == "claude-code"
+            else "no API key (see codex/README.md in the plugin folder)"
+        )
+    elif settings.get("keyWarned"):
+        automatic = "inactive: InfraNodus rejected the API key at the last recall. Update it in /plugin"
+    else:
+        automatic = "active: recall at the first prompt of a session, saving at its end"
+        if os.environ.get("INFRANODUS_MEMORY_DISABLE_CAPTURE") == "1":
+            automatic = "recall only: INFRANODUS_MEMORY_DISABLE_CAPTURE is set, so no session is sent"
+    recall, upload = last_runs(project)
     lines = [
-        "Project: %s" % project,
-        "Memory: %s for this project (settings: %s)" % (state, settings_path()),
-        "API key: %s" % (
-            "set (from %s)" % key_source() if key
-            else "missing (Claude Code: configure it in /plugin; Codex or Grok: "
-                 "python3 hooks/memory.py set-key YOUR_KEY, or export INFRANODUS_API_KEY)"
-        ),
+        project_line(project),
+        "Memory: %s for this project (settings: %s)" % ("off" if off else "on", settings_path()),
+        "API key: %s" % ("set" if plugin_key() else "not set"),
+        "Automatic memory: %s" % automatic,
+        "Commands: recall, optimize, remember and save work through the InfraNodus "
+        "MCP tools when the agent has them; with an API key, recall, save and "
+        "forget-last also work without them",
+        "Last recall: %s" % (recall or "none yet"),
+        "Last upload: %s" % (upload or "none yet"),
         "Client: %s" % CLIENT,
         "Saves: %s" % save_setting(),
     ]
     if base != DEFAULT_API_BASE:
         lines.append("API address: %s" % base)
     return "\n".join(lines)
+
+
+def recall_now(project, query):
+    """/infranodus-memory:recall when a key is set: the same /recall call the
+    first prompt makes, for the user's query, so recall also works when the
+    agent has no InfraNodus tools."""
+    lines = [project_line(project)]
+    key, base = api_settings()
+    if not key:
+        lines.append("%s Look it up with the InfraNodus tools." % no_key_line())
+        return "\n".join(lines)
+    query = (query or "").strip()
+    if query:
+        try:
+            status, body = post(
+                base, key, "/recall",
+                {"project": project, "prompt": query, "client": CLIENT},
+                COMMAND_TIMEOUT_S,
+            )
+        except Exception as error:
+            status, body = 0, None
+            lines.append("Couldn't reach InfraNodus for the recall (%s)." % type(error).__name__)
+        if status == 200 and isinstance(body, dict):
+            block = (body.get("block") or "").strip()
+            lines.append(
+                "Recall through the API for \"%s\":\n%s" % (query, block) if block
+                else "Recall through the API: nothing in memory matches \"%s\"." % query
+            )
+        elif status in (401, 403):
+            lines.append("InfraNodus rejected the API key (update it in /plugin).")
+        elif status:
+            lines.append("InfraNodus refused the recall (%s)." % status)
+    else:
+        lines.append("No query came with the command: use what the user asked in the conversation.")
+    lines.append(list_memory_graphs(project))
+    return "\n".join(lines)
+
+
+def forget_last(project):
+    key, base = api_settings()
+    if not key:
+        return (
+            "%s forget-last needs the key: it undoes a session the hooks "
+            "uploaded, and without a key nothing was uploaded. Learnings saved "
+            "by hand can be removed with the InfraNodus delete_statements tool "
+            "(graph %s)." % (no_key_line(), learnings_graph_name(project))
+        )
+    try:
+        status, body = post(base, key, "/memory/forget", {"project": project}, COMMAND_TIMEOUT_S)
+    except Exception as error:
+        return "Couldn't reach InfraNodus: %s" % type(error).__name__
+    if status != 200 or not isinstance(body, dict):
+        return "InfraNodus refused (%s): %s" % (status, (body or {}).get("error", ""))
+    count = body.get("forgotten", 0)
+    if not count:
+        return body.get("message") or "Nothing to forget for %s." % project
+    return "Removed the %d learning%s saved from the last session in %s." % (
+        count, "" if count == 1 else "s", project)
+
+
+def command(name, cwd, args="", event=None):
+    """One of the plugin's commands, for the project in cwd. Returns the text
+    for the agent to relay or act on. `event` is the hook payload when the
+    command came through the expansion hook."""
+    project = project_for(cwd)
+    if not project:
+        return (
+            "This folder isn't a project (no git repo or project file found), "
+            "so InfraNodus memory doesn't run here and has no memory graph for it."
+        )
+    event = event or {}
+    settings = load_settings()
+    if name == "off":
+        set_listed(settings, "off", project, True)
+        save_settings(settings)
+        return (
+            "InfraNodus memory is now off for %s on this machine: nothing is "
+            "recalled or sent for it. The graph %s is kept; "
+            "/infranodus-memory:on turns memory back on."
+            % (project, learnings_graph_name(project))
+        )
+    if name == "on":
+        set_listed(settings, "off", project, False)
+        save_settings(settings)
+        return "InfraNodus memory is on for %s again." % project
+    if name == "save":
+        return save_now(cwd, event.get("transcript_path"), event.get("session_id"))
+    if name == "forget-last":
+        return forget_last(project)
+    if name == "recall":
+        return recall_now(project, args)
+    if name in ("optimize", "graphs"):
+        return "\n\n".join(
+            [project_line(project), list_memory_graphs(project), claude_memory_files(cwd)]
+        )
+    if name == "remember":
+        return project_line(project)
+    return status_text(project, settings)
+
+
+def hook_command(event):
+    """UserPromptExpansion: the user typed /infranodus-memory:<command>.
+
+    A command (a skill) is never given the API key, so the part of a command
+    that needs it runs here, where Claude Code provides the plugin's
+    settings, and reaches the agent as context next to the skill's text.
+    Returns (hook JSON output or None, command name)."""
+    name = event.get("command_name") or ""
+    args = event.get("command_args") or ""
+    if not name:  # a client that sends only the typed line
+        typed = (event.get("prompt") or "").strip()
+        if typed.startswith("/"):
+            name, _, args = typed[1:].partition(" ")
+    if not name.startswith(COMMAND_PREFIX):
+        return None, ""
+    name = name[len(COMMAND_PREFIX):]
+    if name not in COMMANDS:
+        return None, ""
+    text = command(name, event.get("cwd") or os.getcwd(), args, event)
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptExpansion",
+            "additionalContext": "[infranodus-memory] Result of /infranodus-memory:%s "
+            "from the plugin's hook:\n%s" % (name, text),
+        }
+    }
+    return output, name
 
 
 def main():
@@ -894,7 +1040,7 @@ def main():
             result = hook_prompt(event)
             if result:
                 sys.stdout.write(json.dumps(result))
-                outcome = "recalled"
+                outcome = "recalled" if result.get("hookSpecificOutput") else "notice"
         except Exception as error:  # never block or disturb the prompt
             outcome = "error:%s" % type(error).__name__
         log_timing("prompt", project, started, outcome)
@@ -910,6 +1056,22 @@ def main():
             outcome = "error:%s" % type(error).__name__
         log_timing("flush", None, started, outcome)
         return 0
+    if action == "hook-command":
+        started = time.time()
+        project, outcome = None, "skipped"
+        try:
+            event = normalize_event(json.load(sys.stdin))
+            CLIENT = detect_client(event)
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            result, name = hook_command(event)
+            if result:
+                project = project_for(event.get("cwd") or os.getcwd())
+                sys.stdout.write(json.dumps(result))
+                outcome = name
+        except Exception as error:  # the command still runs, without the hook's part
+            outcome = "error:%s" % type(error).__name__
+        log_timing("command", project, started, outcome)
+        return 0
     if action == "ingest-worker" and len(sys.argv) >= 6:
         started = time.time()
         CLIENT = detect_client()
@@ -920,14 +1082,15 @@ def main():
             outcome = "error:%s" % type(error).__name__
         log_timing("upload", project_for(sys.argv[4]), started, outcome)
         return 0
-    if action in ("off", "on", "status", "forget-last", "save", "graphs", "set-key", "clear-key"):
-        rest = take_setting_args(sys.argv[2:])
-        if action == "set-key" and rest:
-            os.environ["INFRANODUS_NEW_KEY"] = rest[0]  # never printed
+    if action in COMMANDS or action == "graphs":
         CLIENT = detect_client()
-        print(command(action, os.getcwd()))
+        print(command(action, os.getcwd(), " ".join(sys.argv[2:])))
         return 0
-    print("usage: memory.py hook-prompt | hook-flush | off | on | status | save | forget-last | set-key KEY | clear-key", file=sys.stderr)
+    print(
+        "usage: memory.py hook-prompt | hook-flush | hook-command | "
+        + " | ".join(COMMANDS),
+        file=sys.stderr,
+    )
     return 0
 
 

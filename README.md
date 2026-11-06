@@ -1,23 +1,48 @@
 # InfraNodus Graph Memory plugin
 
-The `infranodus-memory` plugin: automatic memory for coding agents, stored as
-InfraNodus knowledge graphs in your own account. On the first prompt of a
-session it recalls what earlier sessions learned about the project; at the end
-of a session it saves new learnings. Because memory is a graph, recall is
+The `infranodus-memory` plugin: memory for coding agents, stored as InfraNodus
+knowledge graphs in your own account. Because memory is a graph, recall is
 GraphRAG (it follows the links between concepts by hop distance, so it also
 finds learnings reachable only through an intermediate concept) and can say
 what the memory is missing.
 
-Runs in **Claude Code**, **Codex** (OpenAI) and **Grok Build** (xAI) from the
-same files: one `hooks/hooks.json`, one hook runtime, a Claude Code manifest
-(`.claude-plugin/`), a Codex manifest (`.codex-plugin/`, `.mcp.json`,
-`.agents/plugins/marketplace.json`), and Grok's Claude Code compatibility.
+It works in two ways:
 
-**Status:** the full cycle works (saving and recall) in Claude Code, not
-released yet. Codex support is built on the documented hook and rollout
-formats and tested against recorded sessions; Grok Build support is built on
-its published hook contract and not yet run against the real client (see
-"Grok Build" below for what is verified and what is not).
+- **Commands, through your InfraNodus connector.** `/infranodus-memory:recall`,
+  `:save`, `:remember` and `:optimize` use the InfraNodus MCP tools you already
+  have connected. No setup, no API key.
+- **Automatic memory, with an optional API key.** On the first prompt of a
+  session it recalls what earlier sessions learned about the project; at the
+  end of a session it saves new learnings.
+
+The plugin brings no MCP server of its own, so it never hides or duplicates
+the InfraNodus connector or server you have.
+
+## What is sent and when
+
+Without an API key the plugin sends nothing by itself. The commands only do
+what you ask, through your InfraNodus connector.
+
+With an API key:
+
+- **First prompt of a session:** that prompt and the project name, to recall
+  related learnings. Later prompts send nothing.
+- **End of a session and before a compaction:** a trimmed excerpt of the
+  session (your prompts, Claude's final answers, failed tool calls, files
+  edited, commands that worked). Secrets and `<private>…</private>` text are
+  removed before it leaves your machine.
+- **Where it goes:** to infranodus.com only, into graphs in your own
+  InfraNodus account (`learn-<project>`, and `memory-<topic>` for facts about
+  clients or subjects). The key is sent nowhere else.
+- **Not sent:** anything from your home folder, temp folders, folders without
+  a git repo or project file, and folders listed in `exclude_paths`.
+- **Turning it off:** `/infranodus-memory:off` for one project;
+  `INFRANODUS_MEMORY_DISABLE=1` for everything;
+  `INFRANODUS_MEMORY_DISABLE_CAPTURE=1` keeps recall but sends no sessions;
+  removing the key in `/plugin` stops all of it.
+- **Kept on your machine,** in `~/.infranodus/`: which projects are off, which
+  sessions were recalled and uploaded, uploads waiting for a retry, and a
+  timing log. The key is not stored there.
 
 ## Install
 
@@ -28,56 +53,32 @@ its published hook contract and not yet run against the real client (see
 /plugin install infranodus-memory@infranodus-plugins
 ```
 
+No setup is required. Connect the InfraNodus connector (claude.ai Settings →
+Connectors, or `claude mcp add --transport http infranodus https://mcp.infranodus.com`)
+and the commands work. The install dialog offers three optional fields; leave
+them empty, or enter an API key from https://infranodus.com/api-access to turn
+on automatic memory. You can add or remove the key later in `/plugin`.
+
 [`infranodus/plugins`](https://github.com/infranodus/plugins) is the marketplace
-for InfraNodus plugins; it also lists the core `infranodus` plugin (graph tools
-and the `/infranodus` skill). Straight from this repo instead:
+for InfraNodus plugins; it also lists the core `infranodus` plugin (the
+`/infranodus` skill). Straight from this repo instead:
 `/plugin marketplace add infranodus/infranodus-memory-plugin`, then
 `/plugin install infranodus-memory@infranodus-memory`; from a local clone,
 `/plugin marketplace add ~/path/to/infranodus-memory-plugin` and the same
-install line. Claude Code asks for your API key. The skills have their own
-marketplace, [`infranodus/skills`](https://github.com/infranodus/skills).
+install line. The skills have their own marketplace,
+[`infranodus/skills`](https://github.com/infranodus/skills).
 
-### Codex (OpenAI)
+### Other clients (experimental)
 
-```
-codex plugin marketplace add infranodus/plugins
-```
+Claude Code is the supported client. The same files also load in Codex
+(OpenAI) and Grok Build (xAI); that support is built on their published hook
+formats and not tested against every release. See
+[`codex/README.md`](https://github.com/infranodus/infranodus-memory-plugin/blob/master/codex/README.md)
+in the repository.
 
-(or `codex plugin marketplace add infranodus/infranodus-memory-plugin` for this
-repo alone). Then install `infranodus-memory` from the marketplace in the Codex app or the
-`/plugins` screen of the CLI, and trust its three hooks in `/hooks` (Codex
-skips untrusted hooks). Codex has no plugin settings screen, so set the API
-key once, from any project folder:
+## What automatic memory does
 
-```
-python3 ~/.codex/plugins/<path-to>/infranodus-memory/hooks/memory.py set-key YOUR_INFRANODUS_API_KEY
-```
-
-or export `INFRANODUS_API_KEY` in your shell. The key is kept in
-`~/.infranodus/memory.json` (mode 600). The plugin's `.mcp.json` adds the
-InfraNodus MCP server (OAuth) for the `recall` and `optimize` skills. Codex runs
-the same hooks as Claude Code, with the same payload, and its session rollout
-is read as the transcript; its `SessionEnd` hooks are limited to 3 s, which the
-upload hook meets by handing the work to a background process in about 5 ms.
-
-### Grok Build (xAI)
-
-Grok loads Claude Code plugins, marketplaces and hooks as they are, so install
-the Claude Code plugin (the marketplace lines above, or `grok --plugin-dir
-~/path/to/infranodus-memory-plugin`), trust the hooks with `/hooks-trust`, and
-set the key with `set-key` or `INFRANODUS_API_KEY` as for Codex. Grok sends
-hooks a camelCase payload (`hookEventName`, `sessionId`, `cwd`,
-`workspaceRoot`) and `GROK_*` variables; the runtime reads both. Because Grok
-ignores what a hook writes to stdout, the recall is also written to
-`<project>/.grok/rules/infranodus-memory.md`, a rules file Grok loads at session
-start (so it is current from the next session on; add the file to
-`.git/info/exclude` if you don't want it in the repo). Saving needs the
-session transcript: Grok keeps sessions under `~/.grok/sessions/` in a format
-its docs don't describe, so the upload runs only when Grok passes a
-`transcript_path` the runtime can read; otherwise nothing is sent and nothing
-breaks.
-
-## What it does
+With an API key set:
 
 - **On the first prompt of a session** in a project, it sends the prompt and
   the project name to InfraNodus (`/api/v1/recall`) and gives Claude up to 5
@@ -95,8 +96,11 @@ breaks.
   undo)."
 - **The first time in a project**, it tells you once: "InfraNodus memory is on
   for `<project>` → graph link."
-- **It never slows Claude down:** a 2 s limit on the one call; on any error,
-  timeout or missing key it does nothing and says nothing.
+- **It never slows Claude down:** a 2 s limit on the one call; on any error
+  or timeout it does nothing and says nothing.
+- **Without an API key** none of the above runs and nothing is sent. The
+  first prompt in a project says once: "InfraNodus memory: add an API key in
+  /plugin to turn on automatic memory for `<project>`."
 - **Not a project, nothing sent:** your home folder, temp folders and folders
   without a git repo or project file are skipped.
 
@@ -104,62 +108,60 @@ breaks.
 
 | Command | What it does |
 |---|---|
-| `/infranodus-memory:off` | Turn memory off for the current project on this machine: nothing is recalled or sent. The graph is kept |
-| `/infranodus-memory:on` | Turn it back on |
-| `/infranodus-memory:status` | Show the project name, whether memory is on, and whether the key is set |
-| `/infranodus-memory:save` | Save this session now instead of at its end. Claude also runs it when you ask in plain words ("save what we learned to memory") |
-| `/infranodus-memory:optimize [learnings \| <topic> \| claude \| claude-mem \| mem0 \| all]` | Analyse the project's memory with InfraNodus `optimize_knowledge_base`: its InfraNodus learnings and topic graphs, and also Claude's own memory notes, claude-mem or mem0 when present (sent as they are, not stored). With several, it asks which. Then it proposes statements that bridge the gaps it finds and saves only the ones you approve. Needs the InfraNodus MCP server authenticated in `/mcp` |
-| `/infranodus-memory:recall <concept or question>` | Look something up in memory mid-session, following the graph's links: for a concept, what it is connected to by hop distance and the learnings on those links; for a question, the most relevant learnings, including ones linked through another concept. Claude also runs it when you ask what memory says about something. Needs the InfraNodus MCP server authenticated in `/mcp` |
-| `/infranodus-memory:forget-last` | Remove the learnings saved from the last session |
+| `/infranodus-memory:recall <concept or question>` | Look something up in memory mid-session, following the graph's links: for a concept, what it is connected to by hop distance and the learnings on those links; for a question, the most relevant learnings, including ones linked through another concept. Claude also runs it when you ask what memory says about something |
+| `/infranodus-memory:remember <what>` | Save specific content you name (rules, a list, a fact, a decision) to memory, one statement per item. Claude also runs it when you say "remember this" or "save these to InfraNodus" |
+| `/infranodus-memory:save` | Save what this session learned now instead of at its end. Claude also runs it when you ask in plain words ("save what we learned to memory") |
+| `/infranodus-memory:optimize [learnings \| <topic> \| claude \| claude-mem \| mem0 \| all]` | Analyse the project's memory with InfraNodus `optimize_knowledge_base`: its InfraNodus learnings and topic graphs, and also Claude's own memory notes, claude-mem or mem0 when present (sent as they are, not stored). Then it proposes statements that bridge the gaps it finds and saves only the ones you approve |
+| `/infranodus-memory:forget-last` | Remove the learnings automatic memory saved from the last session |
+| `/infranodus-memory:status` | Show the project name, whether memory is on, whether a key is set, whether the InfraNodus tools are available, and which features are active |
+| `/infranodus-memory:off`, `:on` | Turn automatic memory off or back on for the current project on this machine. The graph is kept |
+
+What each command needs:
+
+| Command | InfraNodus connector | API key, no connector | Neither |
+|---|---|---|---|
+| `recall` | works | works when you type the command | asks you to connect the connector |
+| `remember`, `optimize` | work | need the connector | ask you to connect the connector |
+| `save` | works (with a key it uploads the session, otherwise Claude writes the learnings) | works when you type the command | asks you to connect the connector |
+| `forget-last` | needs the key | works | says it needs the key |
+| `status`, `off`, `on` | work | work | work |
+
+A command is never given the API key. When you type one, a hook of the plugin
+does the part that needs the key and hands Claude the result.
 
 They are namespaced, so they don't clash with Claude Code's own `/memory`.
-`INFRANODUS_MEMORY_DISABLE=1` turns everything off;
-`INFRANODUS_MEMORY_DISABLE_CAPTURE=1` keeps recall but sends no sessions.
 
 ## Settings and local files
 
-- `api_key` (required): your InfraNodus API key, asked for at install and kept
-  in your system's secure store. Change it later in `/plugin`. Codex and
-  Grok have no plugin settings: there the hooks read `INFRANODUS_API_KEY`
-  or the key stored by `hooks/memory.py set-key` (`clear-key` removes it).
-- `api_base` (optional): only for your own InfraNodus server.
+- `api_key` (optional): your InfraNodus API key, kept in your system's secure
+  store. It turns on automatic memory. Add, change or remove it in `/plugin`.
 - `save` (optional): what sessions save. `both` (the default), `learnings`
   (how to work in each project) or `memories` (facts about clients,
   companies, cases, each in its own `memory-<topic>` graph).
 - `exclude_paths` (optional): folders where memory never runs, e.g.
   `~/clients/*, ~/private`.
-- `~/.infranodus/memory.json`: the projects turned off, the projects you
-  were already told about, and the API key when set with `set-key`. Kept outside the project so a setting is never
+- `~/.infranodus/memory.json`: the projects turned off and the projects you
+  were already told about. Kept outside the project so a setting is never
   committed for your teammates.
 - `~/.infranodus/sessions/`, `~/.infranodus/uploaded/`: which sessions already
   had their recall, and how far each was uploaded.
 - `~/.infranodus/queue/`: uploads that failed, retried later (kept 7 days).
 - `~/.infranodus/timings.log`: how long each hook run took.
 
-## Clients
-
-| | Claude Code | Codex | Grok Build |
-|---|---|---|---|
-| Manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` + `.mcp.json`, catalog in `.agents/plugins/marketplace.json` | the Claude Code manifest, through Grok's compatibility layer |
-| Hooks | `hooks/hooks.json` | the same file (`${CLAUDE_PLUGIN_ROOT}` is set by Codex too) | the same file |
-| Payload | `session_id`, `cwd`, `prompt`, `transcript_path` | the same | `hookEventName`, `sessionId`, `cwd`, `workspaceRoot`, `GROK_*` variables |
-| Recall reaches the model through | `additionalContext` | `additionalContext` | `.grok/rules/infranodus-memory.md` (stdout is ignored) |
-| Transcript read for the upload | Claude Code `.jsonl` | Codex rollout `.jsonl` | only if passed as `transcript_path` |
-| API key | plugin setting | `INFRANODUS_API_KEY` or `set-key` | `INFRANODUS_API_KEY` or `set-key` |
-| Skills' `!` preamble | runs | shown as text; the skill tells the agent the command to run | shown as text, same |
-| `client` sent to the API | `claude-code` | `codex` | `grok` |
-
 ## Development
 
 ```
 python3 -m unittest discover -s tests          # hook and command tests (no network)
+claude plugin validate . --profile directory   # manifest and plugin directory checks
 claude --plugin-dir .                          # load the plugin from this folder
 ```
 
-For a local InfraNodus server, set `CLAUDE_PLUGIN_OPTION_API_KEY` and
-`CLAUDE_PLUGIN_OPTION_API_BASE=http://localhost:3000/api/v1` in the shell
-before starting `claude --plugin-dir .`.
+For a local InfraNodus server, start Claude Code with
+`INFRANODUS_API_BASE=http://localhost:3000/api/v1` in the shell and set the
+key in `/plugin`. The key is only sent to infranodus.com or to a server on
+this machine; any other address is refused.
 
-- Build plan, with links to the related plans in other repos: [`docs/plan.md`](docs/plan.md)
-- Tasks for this repo: [`docs/todo/memory-system.md`](docs/todo/memory-system.md)
+- Build plan and tasks: `docs/plan.md` and `docs/todo/` in the
+  [repository](https://github.com/infranodus/infranodus-memory-plugin)
+- The copy for Anthropic's plugin directory: `scripts/release-directory.sh`
 - Design: `mcp-server-infranodus/docs/drafts/infranodus-memory-system.md`
