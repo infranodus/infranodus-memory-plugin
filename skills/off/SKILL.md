@@ -2,12 +2,12 @@
 name: off
 description: Turn InfraNodus memory off for the current project on this machine: nothing is recalled or sent for it until /infranodus-memory:on. Run only when the user asks.
 disable-model-invocation: true
-allowed-tools: Bash(python3:*)
 ---
 
-!`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/memory.py" off --key "${user_config.api_key}" --base "${user_config.api_base}"`
+When the user types this command, the plugin's hook runs it and puts the result into your context, in a block that starts with `[infranodus-memory]`.
 
+Relay that result to the user in one or two plain sentences.
 
-If nothing appears above, the client did not run that command line (Codex and Grok Build load this skill but only Claude Code executes the `!` preamble): run it yourself from the project folder, `python3 <plugin root>/hooks/memory.py off`, where the plugin root is the folder two levels above this SKILL.md. There the API key comes from `INFRANODUS_API_KEY` or from `memory.py set-key`, not from `/plugin`.
+If no `[infranodus-memory]` block is in your context, the hook did not run. In Codex or Grok Build, which have no such hook, run `python3 <plugin root>/codex/key.py off` from the project folder (the plugin root is the folder two levels above this file) and use its output as the block. If there is still no result, say the command could not be run here.
 
-Relay the result above to the user in one or two plain sentences. Do not run anything else.
+Do not run anything else.

@@ -2,27 +2,30 @@
 name: optimize
 description: Optimize the InfraNodus Graph Memory of the current project. Runs the InfraNodus optimize_knowledge_base graph analysis on the project's InfraNodus learnings and topic memory graphs, and also on other memories when present (Claude's own memory notes, claude-mem, mem0), finds the clusters that never connect and the under-developed areas, and proposes new statements that bridge those gaps, to save after the user approves. Use when the user asks to optimize, improve, review or find gaps in their memory or learnings.
 argument-hint: "[learnings | <topic> | claude | claude-mem | mem0 | all]"
-allowed-tools: Bash(python3:*), Read
+allowed-tools: Read
 ---
 
 ## Memory here
 
-!`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/memory.py" graphs --key "${user_config.api_key}" --base "${user_config.api_base}"`
+When the user types this command, the plugin's hook puts a block starting with `[infranodus-memory]` into your context: the project name and, when an API key is set, the memory graphs and how many notes Claude's own memory has for this folder.
 
+If no `[infranodus-memory]` block is in your context, the hook did not run. In Codex or Grok Build, which have no such hook, run `python3 <plugin root>/codex/key.py optimize` from the project folder (the plugin root is the folder two levels above this file) and use its output as the block.
 
-If nothing appears above, the client did not run that command line (Codex and Grok Build load this skill but only Claude Code executes the `!` preamble): run it yourself from the project folder, `python3 <plugin root>/hooks/memory.py graphs`, where the plugin root is the folder two levels above this SKILL.md. There the API key comes from `INFRANODUS_API_KEY` or from `memory.py set-key`, not from `/plugin`.
+Without a list of graphs in the block, call the InfraNodus `list_graphs` tool and take the memory graphs: `learn-<project>` for the project name from the block; without a block, the name of the git remote `origin` (the last part of its URL, without `.git`), else the name of the repository's folder, the `memory-<topic>` graphs and `personal-…`. Claude's own notes for this folder are in `~/.claude/projects/<the folder's absolute path with every character that is not a letter or digit replaced by a hyphen>/memory/`.
+
+This command works through the InfraNodus MCP tools, from whatever InfraNodus server or connector is connected (with several, the one for infranodus.com).
 
 ## What to do
 
 1. **Find the memory sources.** Possible sources:
-   - each InfraNodus memory graph listed above (learnings, a topic, personal);
-   - Claude's own memory, when the notes folder above has notes;
+   - each InfraNodus memory graph (learnings, a topic, personal), from the block or from `list_graphs`;
+   - Claude's own memory, when its notes folder has notes;
    - claude-mem, when its MCP search tools are available in this session;
    - mem0, when its `search_memories` MCP tool is available.
 
    If there is none, say there is no memory to optimize yet and stop. If the user named one in the command (`$ARGUMENTS`), use that. With one source, use it. With several, ask with the AskUserQuestion tool (multiSelect) which to optimize, one option per source with a few words on what it holds.
 
-2. **Analyze each chosen source on its own** with the InfraNodus MCP tool `optimize_knowledge_base`, `includeLatent: true`, `focus: "procedural"` for project learnings and Claude's notes about how to work in a project, `"general"` otherwise. If the tool isn't available, say the InfraNodus MCP server needs authenticating in `/mcp` (Claude Code) or connecting as the plugin's MCP server (Codex, Grok) and stop.
+2. **Analyze each chosen source on its own** with the InfraNodus MCP tool `optimize_knowledge_base`, `includeLatent: true`, `focus: "procedural"` for project learnings and Claude's notes about how to work in a project, `"general"` otherwise. If the tool isn't available, say "Connect the InfraNodus connector (or add an API key in /plugin for automatic memory)." and stop.
    - **An InfraNodus graph:** `graphName` set to the graph.
    - **Any other memory:** send the memories as they are, one per item in `statements`, without rewriting them or adding wikilinks, and without `saveAs`, so nothing is stored in InfraNodus.
      - Claude's own memory: Read each note in the folder (skip `MEMORY.md`); one statement per note, its text without the frontmatter.
@@ -41,7 +44,7 @@ If nothing appears above, the client did not run that command line (Codex and Gr
 5. **Show them to the user** as a numbered list per source: each statement, its type (for learnings), and in a few words which gap or area it addresses. Ask which to save, and for a source outside InfraNodus, where. Save nothing without the user's answer.
 
 6. **Save the approved ones:**
-   - InfraNodus learnings: `add_project_learnings` with the project name from the list above, `statements`, `types`, and `confirm: true` (the user already approved them).
+   - InfraNodus learnings: `add_project_learnings` with the project name, `statements`, `types`, and `confirm: true` (the user already approved them).
    - An InfraNodus topic: `memory_add_relations` with `scope: "topic"`, `topic`, `statements` and `confirm: true`.
    - InfraNodus personal: `memory_add_relations` with `scope: "personal"`, `statements` and `confirm: true`.
    - Claude's own memory: a new note in that folder in the same format as the others, plus its line in `MEMORY.md`.
