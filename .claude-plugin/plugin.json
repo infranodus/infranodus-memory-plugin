@@ -1,0 +1,45 @@
+{
+  "name": "infranodus-memory",
+  "version": "0.8.0",
+  "description": "InfraNodus Graph Memory: memory for Claude Code, stored as a knowledge graph in your InfraNodus account. Its commands recall, save and optimize what was learned about a project through your InfraNodus connector. With an optional API key it also works by itself: at the end of a session it saves what was learned, and at the first prompt of the next one it recalls it, plus a gap the memory doesn't cover yet. Recall is GraphRAG: it follows the graph's links between concepts by hop distance instead of matching text. /infranodus-memory:off stops it for one project.",
+  "author": {
+    "name": "InfraNodus",
+    "url": "https://infranodus.com"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "infranodus",
+    "memory",
+    "agent-memory",
+    "knowledge-graph",
+    "project-learnings",
+    "recall"
+  ],
+  "homepage": "https://github.com/infranodus/infranodus-memory-plugin",
+  "repository": "https://github.com/infranodus/infranodus-memory-plugin",
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://infranodus.com/docs/claude-code-memory-plugin",
+  "supportUrl": "https://support.noduslabs.com",
+  "privacyPolicyUrl": "https://infranodus.com/about/privacy-policy",
+  "termsOfServiceUrl": "https://infranodus.com/about/terms-conditions",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "InfraNodus API key (optional)",
+      "description": "Optional. Turns on automatic memory (recall at session start, saving at session end). Without it, use the skills through the InfraNodus connector.",
+      "sensitive": true
+    },
+    "save": {
+      "type": "string",
+      "title": "What to save (optional)",
+      "description": "both (the default: learnings about each project, and facts about clients, companies and cases, each in its own memory-<topic> graph), learnings, or memories.",
+      "default": "both"
+    },
+    "exclude_paths": {
+      "type": "string",
+      "title": "Folders to leave out (optional)",
+      "description": "Comma-separated folders or globs where memory never runs, e.g. ~/clients/*, ~/private",
+      "default": ""
+    }
+  }
+}
