@@ -1,6 +1,6 @@
 # Fix 5: submitting the plugin to Anthropic's directory
 
-**Status:** after the 0.8.0 release. Final version 2026-11-06.
+**Status:** the copy is built and checked locally (2026-11-06, branch `claude-directory`, from the unmerged `connector-first`). The submission itself is not done.
 **Depends on:** [fix 1](fix-1-key-for-commands.md), [fix 2](fix-2-save-specific-content.md), [fix 4](fix-4-no-own-mcp-server.md).
 **Repos:** this one only.
 
@@ -45,22 +45,25 @@ key from the machine, and no text that names one.
 After fixes 1, 2 and 4 the Claude plugin itself is already clean. What is
 left in the repository is Codex's key code and the files that mention it.
 
-- [ ] A branch `claude-directory`, rebuilt from main by
+- [x] A branch `claude-directory`, rebuilt by
       `scripts/release-directory.sh` at each release, without: `codex/`,
       `.codex-plugin/`, `.agents/`, `mcp.json`, `tests/`, `experiments/`,
-      `docs/`.
-      Enter it in the form's "Branch or tag" field
-- [ ] The Codex and Grok instructions (`INFRANODUS_API_KEY`, `set-key`) are
+      `docs/`, `scripts/`. The script stops if a remaining file names
+      `INFRANODUS_API_KEY`, `set-key` or `user_config.api_key`. 16 files
+      remain. Rebuild it after `connector-first` is merged, then enter it in
+      the form's "Branch or tag" field
+- [x] The Codex and Grok instructions (`INFRANODUS_API_KEY`, `set-key`) are
       in `codex/README.md` (fix 4), so the main README has no key example
-- [ ] Check on the branch: `grep -r -i -E 'INFRANODUS_API_KEY|API_KEY|set-key|environ'`
-      finds nothing that reads or names a key
-- [ ] The README's "What is sent and when" section (fix 4) also names the
+- [x] Check on the branch: the only key-related line left is the read of
+      `CLAUDE_PLUGIN_OPTION_API_KEY` in `hooks/memory.py`, the value Claude
+      Code passes from the plugin's settings (see the open point in fix 1)
+- [x] The README's "What is sent and when" section (fix 4) also names the
       files kept in `~/.infranodus/`, as the checklist asks ("Describe in
       the README everything the plugin runs, sends, or fetches")
-- [ ] `README.md` and the description: automatic memory needs Claude Code;
+- [x] `README.md` and the description: automatic memory needs Claude Code;
       in claude.ai chat and Cowork the plugin gives the memory commands
       through the InfraNodus connector
-- [ ] `.claude-plugin/plugin.json`: add `documentationUrl` and `icon`
+- [x] `.claude-plugin/plugin.json`: add `documentationUrl` and `icon`
 - [ ] Submit the InfraNodus server as a connector if it is not listed yet
 - [ ] **Validate** the branch in the portal before submitting; fix whatever
       it reports
@@ -83,8 +86,12 @@ fix 4 removes. Add it only if a reviewer asks.
 
 ## Tests before submitting
 
-- [ ] The branch installed in Claude Code: recall, the session-end upload
-      and every command work
+- [x] `claude plugin validate . --profile directory` on a checkout of the
+      branch: nothing to report (a subset of the portal's checks)
+- [x] The branch loaded in Claude Code with `--plugin-dir`, no key:
+      `/infranodus-memory:status` works
+- [ ] The branch with a key: recall, the session-end upload and every
+      command
 - [ ] The branch uploaded as a zip in claude.ai chat and in Cowork:
       `remember` and `recall` work through the connector; nothing mentions a
       key or a script
