@@ -16,7 +16,7 @@ This command works through the InfraNodus MCP tools, from whatever InfraNodus se
 
 2. **Write the statements.** One per item the user gave: nothing merged, dropped or shortened, and wording kept apart from what a statement needs. Keep IDs, numbers and checks. Each statement names at least two things as `[[wikilinks]]`, stays under 400 characters and holds no secrets, credentials or host names. An item longer than 400 characters becomes two statements that share its ID as a wikilink (the rule, then its check). Give each group of items a category.
 
-3. **Save in batches of about 25**, so one refused statement does not hold up the rest. The tools answer with a dry run first. If it keeps every statement as written, call again with `confirm: true`: the user's request is the approval. If it drops or changes one, show that and ask.
+3. **Save in batches of about 25**, so one refused statement does not hold up the rest. Pass `confirm: true`: the user's request is the approval, so each batch is saved in one call, without a preview. If a batch is rejected (a statement looks like a secret, is too long, or names fewer than two things), fix or leave out the statements it lists and send that batch again.
    - If the tool answers that the project or topic is not enabled, enable it (`enable_project_learnings`, or `enable_memory` for a topic or personal memory) because the user asked to save there, then repeat the call.
 
 4. **Report** how many statements were saved, the graph's name and link, and anything that was refused, with the reason.
