@@ -1,6 +1,6 @@
 ---
 name: dream
-description: Consolidate the InfraNodus Graph Memory of the current project. Replays a batch of the project's saved learnings against the repo and the session transcripts they came from, then corrects the ones that are wrong, retires the outdated ones, merges the ones that say the same thing, bridges gaps between clusters, and promotes the few that every session should see. Changes are applied only after the user approves the plan. Use when the user asks to dream, consolidate, clean up, verify or prune their memory or learnings. To only find gaps and add statements, use /infranodus-memory:optimize.
+description: Consolidate the InfraNodus Graph Memory of the current project. Replays a batch of the project's saved learnings against the repo and the session transcripts they came from, then corrects the ones that are wrong, retires the outdated ones, merges the ones that say the same thing, asks the questions that connect its insight clusters and answers them from the repo, and promotes the few that every session should see. Changes are applied only after the user approves the plan. Use when the user asks to dream, consolidate, clean up, verify or prune their memory or learnings. To only find gaps and add statements, use /infranodus-memory:optimize.
 argument-hint: "[area or concept to focus on]"
 allowed-tools: Read, Grep, Glob
 ---
@@ -13,7 +13,7 @@ If no `[infranodus-memory]` block is in your context, the hook did not run. In C
 
 Without a block, the project name is the name of the git remote `origin` (the last part of its URL, without `.git`), else the name of the repository's folder; its learnings graph is `learn-<project>`.
 
-This command works through the InfraNodus MCP tools, from whatever InfraNodus server or connector is connected (with several, the one for infranodus.com). If `get_project_learnings` or `update_statements` isn't available, say "Connect the InfraNodus connector to consolidate memory." and stop.
+This command works through the InfraNodus MCP tools, from whatever InfraNodus server or connector is connected (with several, the one for infranodus.com). If `get_project_learnings`, `optimize_knowledge_base` or `update_statements` isn't available, say "Connect the InfraNodus connector to consolidate memory." and stop.
 
 ## What a dream is for
 
@@ -23,9 +23,17 @@ A dream should leave the memory smaller or the same size, and more correct. It i
 
 ## What to do
 
-1. **Choose what to replay: at most 30 statements.** Call `get_project_learnings` for the project with no prompt, `order: "oldest"`, `uncheckedFor: 30` and `limit: 50`. It returns the overview (main concepts, areas, gaps) and the oldest learnings that no dream checked in the last 30 days, each with its `categories` and `createdAt`, plus `unchecked`: how many are left in the whole graph. Each dream starts where the last one stopped, so repeated dreams work through all of the memory.
+1. **Read the shape of the memory.** Call `optimize_knowledge_base` with `graphName` set to the learnings graph, `focus: "procedural"`, `optimize: "optimize"`, `gapDepth: 0`, `includeLatent: false`. Keep the whole report for step 4. Three things in it steer the dream:
+   - `state`: how the learnings are spread. **biased** (one area holds most of the influence), **focused**, **diversified** (balanced) or **dispersed** (clusters that don't meet).
+   - `dominant`: the cluster with the most influence.
+   - `insightClusters`: one line per set, each naming one to three clusters and their role. These are the clusters whose connection improves the structure most for this state. The first line is the set this call's `suggestions` are about.
+
+   If the graph has no learnings, say there is nothing to consolidate yet and stop.
+
+2. **Choose what to replay: at most 30 statements.** Call `get_project_learnings` for the project with no prompt, `order: "oldest"`, `uncheckedFor: 30` and `limit: 50`. It returns the overview (main concepts, areas, gaps) and the oldest learnings that no dream checked in the last 30 days, each with its `categories` and `createdAt`, plus `unchecked`: how many are left in the whole graph. Each dream starts where the last one stopped, so repeated dreams work through all of the memory.
 
    From those, take up to 30. When there are more than 30, take first:
+   - in a **biased** graph, statements in the `dominant` cluster: that is where repeats and outdated statements pile up;
    - statements about the overview's main concepts (a mistake there spreads furthest);
    - `location` and `trap` statements that name files, functions, commands or settings (they go out of date fastest);
    - then the oldest.
@@ -34,29 +42,44 @@ A dream should leave the memory smaller or the same size, and more correct. It i
 
    If the tool has no `order` input (an older InfraNodus server), call it with no prompt and `limit: 50`, and once more with `type: "trap"`, skip the statements with a recent `dream-<date>` category yourself, and tell the user in the report that only the newest learnings could be reached.
 
-   If the graph has no learnings, say there is nothing to consolidate yet and stop. If `unchecked` is 0, say every learning was checked in the last 30 days and stop, unless the user named an area.
+   If `unchecked` is 0, say every learning was checked in the last 30 days and stop, unless the user named an area.
 
-2. **Check each statement against the ground truth.** One verdict per statement:
+3. **Check each statement against the ground truth.** One verdict per statement:
    - **For anything the repo can show** (where something lives, what a function does, a command, a setting, a convention): look. Find each named `[[entity]]` with Glob and Grep and read the code. A file or symbol that no longer exists, or that no longer does what the statement says, makes the statement outdated or wrong.
    - **For what the repo can't show** (why a decision was made, what went wrong first, an approach): the statement's `session-<id>` category names the session it came from, and that session's transcript is `<transcripts folder>/<id>.jsonl`. Search that file with Grep for the statement's entities and read around the hits. Never read a whole transcript.
    - Verdicts: **holds**, **wrong** (and you can say what is right), **outdated** (true once, the code moved on), **duplicate** (says the same as another statement in different words: keep the more precise one), **can't tell** (neither source settles it). A statement you can't check stays as it is. Never rewrite one on a guess.
 
    Statements that begin with "Confirmed again:" are deliberate: each one raises the weight of a learning that came up again. They are not duplicates. Leave them.
 
-3. **Look for what is missing.** Call `optimize_knowledge_base` with `graphName` set to the learnings graph, `focus: "procedural"`, `includeLatent: false`. For the clusters it reports as unconnected, propose a statement that bridges two of them only where the repo or a transcript shows the relation is real, with at least two `[[wikilinks]]`, one fact, under 300 characters, and a type (location, trap, convention, decision with its reason, workflow, question, approach). Propose no more bridges than the number of statements this dream retires, and never more than 5; with nothing retired, at most 2.
+4. **Ask what connects the insight clusters.** Work on the sets in `insightClusters` from step 1, as many as the state calls for:
+   - **dispersed:** up to three sets. The clusters exist but never meet, so connecting them is the main work of this dream. For the second and third set, call `optimize_knowledge_base` again with the same inputs and `gapDepth: 1`, then `2`, and use the first line of each report.
+   - **biased** or **focused:** one set, the first.
+   - **diversified:** none. The structure is balanced; say so and go to step 5.
 
-4. **Choose the core.** Core statements carry the category `core`, and automatic recall gives them to every session whatever its first prompt is, two at a time. So the core is small: at most 7 statements in the whole graph. A statement belongs there when it held in step 2 (or in an earlier dream), a new agent would get something wrong without it, and it isn't about one narrow corner of the project. Prefer traps and conventions the overview shows as central or often confirmed. A statement that is `core` and no longer qualifies loses the label.
+   For each set:
+   - **Write the question** that connects its clusters, as a new agent would ask it: "does X depend on Y?", "what has to happen to Y after X changes?". The report's `suggestions` are a lead, not the answer. Ask only about what the clusters already hold. A dream brings in no new topics.
+   - **Try to answer it from the ground truth,** as in step 3: the repo first, then the transcripts of the sessions the clusters' statements came from.
+   - **Answered:** propose the answer as a learning of the type it is (location, trap, convention, decision with its reason, workflow, approach).
+   - **Not answered:** propose the question itself as a learning of type `question`, worded as what is not known ("Not established: whether [[X]] has to be rebuilt after [[Y]] changes"). The next session that touches either cluster then meets it and may settle it. Never answer a question on a guess.
 
-5. **Show the plan and ask once.** One numbered list, grouped:
+   Each proposal names entities from both clusters with `[[wikilinks]]`, at least two, holds one fact and stays under 300 characters. Either kind links the clusters, so the next dream is given different sets.
+
+   Propose no more of these than the number of statements this dream retires, and never more than 5; with nothing retired, at most 2.
+
+   If the report has no `insightClusters` (an older InfraNodus server), work from its `missingBridges` in the same way, one set, and say so in the report.
+
+5. **Choose the core.** Core statements carry the category `core`, and automatic recall gives them to every session whatever its first prompt is, two at a time. So the core is small: at most 7 statements in the whole graph. A statement belongs there when it held in step 3 (or in an earlier dream), a new agent would get something wrong without it, and it isn't about one narrow corner of the project. Prefer traps and conventions the overview shows as central or often confirmed. A statement that is `core` and no longer qualifies loses the label.
+
+6. **Show the plan and ask once.** Start with one line on the state of the memory and what it means for this dream. Then one numbered list, grouped:
    - **Correct:** the statement now → the statement after, and what in the repo or transcript shows it (a path and line, or the session).
    - **Retire:** the statement, and why (outdated, or a duplicate of which one).
-   - **Add:** each bridge, its type, and the two areas it connects.
+   - **Add:** for each set of insight clusters, the question, then either the answer with its type and what in the repo or transcript shows it, or the question as it will be saved.
    - **Core:** what joins and what leaves.
    - One line: how many statements were checked, how many hold, how many you couldn't tell.
 
-   Ask which changes to apply. Apply nothing without the user's answer. If every statement holds and nothing is missing, say so; step 6 then only records the check.
+   Ask which changes to apply. Apply nothing without the user's answer. If every statement holds and nothing is missing, say so; step 7 then only records the check.
 
-6. **Apply what the user approved,** with today's date as `dream-<YYYY-MM-DD>`. The user's approval of the plan is the approval for these calls, so each one is sent with `confirm: true`:
+7. **Apply what the user approved,** with today's date as `dream-<YYYY-MM-DD>`. The user's approval of the plan is the approval for these calls, so each one is sent with `confirm: true`:
    - **Correct:** `update_statements` on the learnings graph, one call per statement: `query` set to the statement's current text, `replace: { pattern: <current text>, with: <new text> }`, `set: { addCategories: ["dream-<date>"] }`. The query also matches the "Confirmed again:" repeats of that statement, so they are corrected with it.
    - **Retire:** `update_statements`, one call per statement: `query` set to its text, `set: { addCategories: ["superseded", "dream-<date>"] }`. A superseded statement stays in the graph but is left out of recall, so retiring can be undone by removing the label. Never use `delete_statements` here.
    - **Add:** `add_project_learnings` with the project name, `statements`, `types`, `confirm: true`.
@@ -65,4 +88,4 @@ A dream should leave the memory smaller or the same size, and more correct. It i
 
    If a call reports fewer matches than expected, say which statement was not changed instead of trying another selector.
 
-7. **Report** in a few lines: checked, corrected, retired, added, core now, and how many learnings are still unchecked (`unchecked` minus the ones this dream recorded). Then list each correction as before → after, because the earlier text of a corrected statement is kept nowhere else. Say that retired statements can be brought back by removing their `superseded` category in InfraNodus.
+8. **Report** in a few lines: the state of the memory, checked, corrected, retired, added (answers and open questions apart), core now, and how many learnings are still unchecked (`unchecked` minus the ones this dream recorded). Then list each correction as before → after, because the earlier text of a corrected statement is kept nowhere else. Say that retired statements can be brought back by removing their `superseded` category in InfraNodus.

@@ -504,6 +504,20 @@ class MemoryUploadTest(MemoryHookTest):
             self.assertIn("confirm: true", text, name)
             self.assertNotIn("dry run", text.lower(), name)
 
+    def test_dream_works_from_the_state_of_the_graph_and_its_insight_clusters(self):
+        with open(os.path.join(ROOT, "skills", "dream", "SKILL.md"), encoding="utf-8") as f:
+            text = f.read()
+        # The state is read before anything is chosen, from the insight clusters.
+        self.assertLess(text.index("optimize_knowledge_base"), text.index("get_project_learnings` for"))
+        self.assertIn('`optimize: "optimize"`', text)
+        for state in ("biased", "focused", "diversified", "dispersed"):
+            self.assertIn("**%s" % state, text, state)
+        # Further sets come from the next gap depth, not from asking again.
+        self.assertIn("`gapDepth: 1`", text)
+        # A gap becomes a question; one the repo can't answer is saved as such.
+        self.assertIn("type `question`", text)
+        self.assertIn("Never answer a question on a guess", text)
+
     def test_plugin_files_hold_no_key_handling_of_their_own(self):
         """What Claude Code loads must not read a key from the machine or
         ask Claude Code to paste one into a command."""
