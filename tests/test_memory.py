@@ -464,7 +464,22 @@ class MemoryUploadTest(MemoryHookTest):
         self.assertIn("needs the key", self.expansion("forget-last", env=env))
         self.assertIn("learn-demo-repo", self.expansion("remember", "these rules", env=env))
         self.assertIn("list_graphs", self.expansion("optimize", env=env))
+        self.assertIn("list_graphs", self.expansion("dream", env=env))
         self.assertEqual(FakeRecall.calls, [])
+
+    def test_dream_is_told_the_graph_and_where_the_session_transcripts_are(self):
+        out = self.expansion("dream")
+        self.assertIn("learnings graph: learn-demo-repo", out)
+        self.assertIn("Session transcripts for this folder: none on this machine", out)
+        folder = os.path.join(
+            self.env["INFRANODUS_TRANSCRIPTS"],
+            "".join(c if c.isalnum() and c.isascii() else "-" for c in os.path.realpath(self.repo)),
+        )
+        os.makedirs(folder)
+        open(os.path.join(folder, "abc-123.jsonl"), "w").close()
+        out = self.expansion("dream")
+        self.assertIn("Session transcripts for this folder: 1 in %s (<session id>.jsonl)" % folder, out)
+        self.assertEqual(self.uploads(), [], "a dream uploads nothing by itself")
 
     def test_the_hook_ignores_other_commands_and_never_fails(self):
         self.assertIsNone(self.expansion("status", command_name="other-plugin:status"))
@@ -483,7 +498,7 @@ class MemoryUploadTest(MemoryHookTest):
         # dialog. Through a claude.ai connector that request never arrived and
         # the call timed out after a minute. The user asking to save is the
         # approval, and the confirmed call runs the same checks as the preview.
-        for name in ("save", "remember", "optimize"):
+        for name in ("save", "remember", "optimize", "dream"):
             with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
                 text = f.read()
             self.assertIn("confirm: true", text, name)

@@ -12,7 +12,7 @@ Standard library only, so it starts fast and needs nothing installed.
                               result to the agent as context
     memory.py ingest-worker   (detached) trims the new part of the session,
                               uploads it to /api/v1/ingest, retries the queue
-    memory.py off|on|status|save|forget-last|recall QUERY|optimize|remember
+    memory.py off|on|status|save|forget-last|recall QUERY|optimize|dream|remember
                               the same commands from a shell, for the project
                               in cwd (clients without the expansion hook)
 
@@ -62,7 +62,7 @@ DEFAULT_API_BASE = "https://infranodus.com/api/v1"
 RECALL_TIMEOUT_S = 2.0
 COMMAND_TIMEOUT_S = 15.0  # a typed command may wait; a prompt may not
 COMMAND_PREFIX = "infranodus-memory:"
-COMMANDS = ("off", "on", "status", "save", "forget-last", "recall", "optimize", "remember")
+COMMANDS = ("off", "on", "status", "save", "forget-last", "recall", "optimize", "dream", "remember")
 LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
 INGEST_TIMEOUT_S = 30.0
 MIN_EXCERPT_CHARS = 500  # less than this carries nothing worth an AI call
@@ -784,7 +784,7 @@ def learnings_graph_name(project):
 
 
 def list_memory_graphs(project):
-    """The memory graphs worth optimizing from this project: its learnings
+    """The memory graphs /optimize and /dream work on from this project: its learnings
     graph, every topic memory graph, and personal memory. Returns a printable
     list, or an explanation."""
     key, base = api_settings()
@@ -809,7 +809,7 @@ def list_memory_graphs(project):
         elif name.startswith("personal-"):
             rows.append((2, "- %s: personal memory" % name))
     if not rows:
-        return "No memory graphs yet for %s: nothing to optimize." % project
+        return "No memory graphs yet for %s." % project
     return "Memory graphs for %s:\n%s" % (project, "\n".join(r for _, r in sorted(rows)))
 
 
@@ -826,6 +826,19 @@ def claude_memory_files(cwd):
     if not files:
         return "Claude's own memory for this folder: none."
     return "Claude's own memory for this folder: %d notes in %s" % (len(files), folder)
+
+
+def session_transcripts(cwd):
+    """Where /dream finds the sessions the learnings came from: a learning's
+    session-<id> category is the name of its transcript in this folder."""
+    folder = transcripts_dir(cwd)
+    try:
+        count = sum(1 for n in os.listdir(folder) if n.endswith(".jsonl"))
+    except OSError:
+        count = 0
+    if not count:
+        return "Session transcripts for this folder: none on this machine."
+    return "Session transcripts for this folder: %d in %s (<session id>.jsonl)" % (count, folder)
 
 
 def no_key_line():
@@ -887,7 +900,7 @@ def status_text(project, settings):
         "Memory: %s for this project (settings: %s)" % ("off" if off else "on", settings_path()),
         "API key: %s" % ("set" if plugin_key() else "not set"),
         "Automatic memory: %s" % automatic,
-        "Commands: recall, optimize, remember and save work through the InfraNodus "
+        "Commands: recall, optimize, dream, remember and save work through the InfraNodus "
         "MCP tools when the agent has them; with an API key, recall, save and "
         "forget-last also work without them",
         "Last recall: %s" % (recall or "none yet"),
@@ -992,6 +1005,10 @@ def command(name, cwd, args="", event=None):
     if name in ("optimize", "graphs"):
         return "\n\n".join(
             [project_line(project), list_memory_graphs(project), claude_memory_files(cwd)]
+        )
+    if name == "dream":
+        return "\n\n".join(
+            [project_line(project), list_memory_graphs(project), session_transcripts(cwd)]
         )
     if name == "remember":
         return project_line(project)

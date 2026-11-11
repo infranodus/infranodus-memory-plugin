@@ -9,8 +9,8 @@ what the memory is missing.
 It works in two ways:
 
 - **Commands, through your InfraNodus connector.** `/infranodus-memory:recall`,
-  `:save`, `:remember` and `:optimize` use the InfraNodus MCP tools you already
-  have connected. No setup, no API key.
+  `:save`, `:remember`, `:optimize` and `:dream` use the InfraNodus MCP tools
+  you already have connected. No setup, no API key.
 - **Automatic memory, with an optional API key.** On the first prompt of a
   session it recalls what earlier sessions learned about the project; at the
   end of a session it saves new learnings.
@@ -84,7 +84,9 @@ With an API key set:
   the project name to InfraNodus (`/api/v1/recall`) and gives Claude up to 5
   related learnings from the project's `learn-<project>` graph: the direct
   matches, then learnings linked to them through a shared concept, plus at most
-  one gap the memory doesn't cover. Later prompts send nothing.
+  one gap the memory doesn't cover. Up to two of the five are learnings a
+  dream marked `core`, given whatever the prompt is. Later prompts send
+  nothing.
 - **At the end of a session** (and before a compaction), it trims what
   happened (your prompts, Claude's final answers, failed tool calls, files
   edited, commands that worked; secrets and `<private>…</private>` text
@@ -112,6 +114,7 @@ With an API key set:
 | `/infranodus-memory:remember <what>` | Save specific content you name (rules, a list, a fact, a decision) to memory, one statement per item. Claude also runs it when you say "remember this" or "save these to InfraNodus" |
 | `/infranodus-memory:save` | Save what this session learned now instead of at its end. Claude also runs it when you ask in plain words ("save what we learned to memory") |
 | `/infranodus-memory:optimize [learnings \| <topic> \| claude \| claude-mem \| mem0 \| all]` | Analyse the project's memory with InfraNodus `optimize_knowledge_base`: its InfraNodus learnings and topic graphs, and also Claude's own memory notes, claude-mem or mem0 when present (sent as they are, not stored). Then it proposes statements that bridge the gaps it finds and saves only the ones you approve |
+| `/infranodus-memory:dream [area or concept]` | Consolidate the project's learnings. Claude replays up to 30 of them against the repo and the transcripts of the sessions they came from, then shows one plan: which to correct, which to retire as outdated or duplicate, which gaps to bridge, and which few to mark `core` so that every session gets them. Nothing changes until you approve it. Retired learnings are kept in the graph, left out of recall |
 | `/infranodus-memory:forget-last` | Remove the learnings automatic memory saved from the last session |
 | `/infranodus-memory:status` | Show the project name, whether memory is on, whether a key is set, whether the InfraNodus tools are available, and which features are active |
 | `/infranodus-memory:off`, `:on` | Turn automatic memory off or back on for the current project on this machine. The graph is kept |
@@ -121,7 +124,7 @@ What each command needs:
 | Command | InfraNodus connector | API key, no connector | Neither |
 |---|---|---|---|
 | `recall` | works | works when you type the command | asks you to connect the connector |
-| `remember`, `optimize` | work | need the connector | ask you to connect the connector |
+| `remember`, `optimize`, `dream` | work | need the connector | ask you to connect the connector |
 | `save` | works (with a key it uploads the session, otherwise Claude writes the learnings) | works when you type the command | asks you to connect the connector |
 | `forget-last` | needs the key | works | says it needs the key |
 | `status`, `off`, `on` | work | work | work |

@@ -158,6 +158,18 @@ plugin todo).
 
 ## Step 6: later
 
+- [x] Consolidation ("dreaming"), built 2026-11-11, not yet run against a
+      live graph: `/infranodus-memory:dream` replays up to 30 learnings against
+      the repo and their sessions' transcripts (a learning's `session-<id>`
+      category names its transcript), then corrects, retires (`superseded`),
+      bridges and promotes (`core`) through `update_statements` and
+      `add_project_learnings` after one approval, and tags what it checked
+      `dream-<date>`. "Confirmed again" repeats are left alone: they are the
+      weight of a learning. `infranodus-app`: `/recall` keeps up to 2 of its 5
+      slots for `core` statements
+- [ ] Dreaming, later: a session-start notice when the graph has grown since
+      the last `dream-<date>` (needs a count from `/recall`); which statements
+      recall returned, as a signal for what to replay and what to retire
 - [ ] Phase 4: personal memory; device login replacing the API key
 - [~] Phase 5: adapters for Codex and Grok Build built 2026-11-03 (manifests, payload normalization, Codex rollout parser, key without plugin settings); Cursor and installers open
 - [ ] Optional: the analytical-layer and importer edits from the comparison doc
