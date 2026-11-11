@@ -519,6 +519,33 @@ class MemoryUploadTest(MemoryHookTest):
         self.assertIn("type `question`", text)
         self.assertIn("Never answer a question on a guess", text)
 
+    def test_transcend_ideas_are_made_and_recalled_only_on_request(self):
+        def skill(name):
+            with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
+                return f.read()
+        dream, recall = skill("dream"), skill("recall")
+        # Looking outward is a part of its own, entered only by request.
+        outward = dream[dream.index("## Looking outward"):]
+        self.assertIn("Only when asked", outward)
+        self.assertIn("develop_conceptual_bridges", outward)
+        self.assertNotIn("develop_conceptual_bridges", dream[:dream.index("## Looking outward")])
+        self.assertIn("at most two ideas", outward)
+        # Saved, then labelled so that recall leaves them out.
+        self.assertIn('addCategories: ["transcend", "dream-<date>"]', outward)
+        self.assertIn('`transcend: "only"`', outward)
+        # A normal dream only offers it.
+        self.assertIn("/infranodus-memory:dream transcend", dream[:dream.index("## Looking outward")])
+        # Recall gives them only when asked, and keeps them out otherwise.
+        self.assertIn('`transcend: "only"`', recall)
+        self.assertIn("leave out any statement whose categories include `transcend`", recall)
+
+    def test_recall_transcend_makes_no_api_recall(self):
+        before = len([c for c in FakeRecall.calls if c["path"].endswith("/recall")])
+        out = self.expansion("recall", "transcend webpack")
+        self.assertEqual(len([c for c in FakeRecall.calls if c["path"].endswith("/recall")]), before)
+        self.assertIn("Transcend ideas are not part of the recall through the API", out)
+        self.assertIn("learn-demo-repo", out)
+
     def test_plugin_files_hold_no_key_handling_of_their_own(self):
         """What Claude Code loads must not read a key from the machine or
         ask Claude Code to paste one into a command."""

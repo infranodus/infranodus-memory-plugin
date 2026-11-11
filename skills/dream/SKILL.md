@@ -1,7 +1,7 @@
 ---
 name: dream
-description: Consolidate the InfraNodus Graph Memory of the current project. Replays a batch of the project's saved learnings against the repo and the session transcripts they came from, then corrects the ones that are wrong, retires the outdated ones, merges the ones that say the same thing, asks the questions that connect its insight clusters and answers them from the repo, and promotes the few that every session should see. Changes are applied only after the user approves the plan. Use when the user asks to dream, consolidate, clean up, verify or prune their memory or learnings. To only find gaps and add statements, use /infranodus-memory:optimize.
-argument-hint: "[area or concept to focus on]"
+description: Consolidate the InfraNodus Graph Memory of the current project. Replays a batch of the project's saved learnings against the repo and the session transcripts they came from, then corrects the ones that are wrong, retires the outdated ones, merges the ones that say the same thing, asks the questions that connect its insight clusters and answers them from the repo, and promotes the few that every session should see. Changes are applied only after the user approves the plan. With `transcend` as the first word it also looks outward: a few unverified ideas that link the memory to concepts beyond it, kept apart from the learnings and out of recall. Use when the user asks to dream, consolidate, clean up, verify or prune their memory or learnings, or to expand it with ideas from outside. To only find gaps and add statements, use /infranodus-memory:optimize.
+argument-hint: "[transcend] [area or concept to focus on]"
 allowed-tools: Read, Grep, Glob
 ---
 
@@ -21,6 +21,8 @@ Learnings are written at the end of a session, by a model that saw only that ses
 
 A dream should leave the memory smaller or the same size, and more correct. It is not a reason to add statements.
 
+The one exception is asked for by name. When the arguments begin with `transcend`, or the user asks in their own words for ideas beyond the memory, the dream also looks outward after consolidating (see "Looking outward" below). Without that, it never does. Take the word `transcend` off the arguments before reading the rest as an area.
+
 ## What to do
 
 1. **Read the shape of the memory.** Call `optimize_knowledge_base` with `graphName` set to the learnings graph, `focus: "procedural"`, `optimize: "optimize"`, `gapDepth: 0`, `includeLatent: false`. Keep the whole report for step 4. Two things in it matter here:
@@ -36,7 +38,7 @@ A dream should leave the memory smaller or the same size, and more correct. It i
    - `location` and `trap` statements that name files, functions, commands or settings (they go out of date fastest);
    - then the oldest.
 
-   If the user named an area or concept (`$ARGUMENTS`), call `get_project_learnings` with that as `entity` and `hops: 2` instead, and replay what it returns, leaving out statements with a `dream-<date>` category less than 30 days old.
+   If the user named an area or concept (`$ARGUMENTS`, without a leading `transcend`), call `get_project_learnings` with that as `entity` and `hops: 2` instead, and replay what it returns, leaving out statements with a `dream-<date>` category less than 30 days old.
 
    If the tool has no `order` input (an older InfraNodus server), call it with no prompt and `limit: 50`, and once more with `type: "trap"`, skip the statements with a recent `dream-<date>` category yourself, and tell the user in the report that only the newest learnings could be reached.
 
@@ -72,6 +74,7 @@ A dream should leave the memory smaller or the same size, and more correct. It i
    - **Retire:** the statement, and why (outdated, or a duplicate of which one).
    - **Add:** for each set of insight clusters, the question, then either the answer with its type and what in the repo or transcript shows it, or the question as it will be saved.
    - **Core:** what joins and what leaves.
+   - **Ideas from outside (unverified):** only when looking outward. Each idea, the concept in memory it starts from and the outside concept it brings in. Then any kept idea to retire, and why.
    - One line: how many statements were checked, how many hold, how many you couldn't tell.
 
    Ask which changes to apply. Apply nothing without the user's answer. If every statement holds and nothing is missing, say so; step 7 then only records the check.
@@ -81,8 +84,38 @@ A dream should leave the memory smaller or the same size, and more correct. It i
    - **Retire:** `update_statements`, one call per statement: `query` set to its text, `set: { addCategories: ["superseded", "dream-<date>"] }`. A superseded statement stays in the graph but is left out of recall, so retiring can be undone by removing the label. Never use `delete_statements` here.
    - **Add:** `add_project_learnings` with the project name, `statements`, `types`, `confirm: true`.
    - **Core:** `update_statements` with `statements` set to the texts that join and `set: { addCategories: ["core"] }`; another call with `set: { removeCategories: ["core"] }` for the ones that leave.
+   - **Ideas from outside:** see "Looking outward", step d.
    - **Record the check:** one `update_statements` call with `statements` set to every statement that held or that you couldn't tell about, and `set: { addCategories: ["dream-<date>"] }`, so the next dream moves on to other statements instead of meeting these again.
 
    If a call reports fewer matches than expected, say which statement was not changed instead of trying another selector.
 
 8. **Report** in a few lines: the state of the memory, checked, corrected, retired, added (answers and open questions apart), core now, and how many learnings are still unchecked (`unchecked` minus the ones this dream recorded). Then list each correction as before → after, because the earlier text of a corrected statement is kept nowhere else. Say that retired statements can be brought back by removing their `superseded` category in InfraNodus.
+
+   When the dream did not look outward, and it corrected or retired fewer than a third of the statements it checked, end with one line: "To look outward from this memory for ideas beyond it, run `/infranodus-memory:dream transcend`." Leave the line out when the memory needed more repair than that.
+
+## Looking outward
+
+Only when asked, as described above. It runs after step 5 and before the plan in step 6, on a memory this dream has just checked.
+
+The ideas it produces are not learnings. Nothing in the repo or a transcript can confirm them, so they carry the category `transcend`, which keeps them out of automatic recall, out of `/infranodus-memory:recall`, and out of the replay in step 2. A user sees them in the graph, or with `/infranodus-memory:recall transcend`. They are never `core`.
+
+If `get_project_learnings` has no `transcend` input (an older InfraNodus server), the ideas could not be kept out of recall: say so and skip this part.
+
+a. **Review the ideas already kept.** Call `get_project_learnings` with the project name, `transcend: "only"`, `order: "oldest"`, `limit: 50`. For each idea older than 60 days (`createdAt`), look up the outside concept it brought in: `get_project_learnings` with that concept as `entity` and `transcend: "include"`. If the idea is the only statement that mentions it, no session took it up: propose retiring it. An idea that other statements now link to stays.
+
+b. **Find the doors.** Call `develop_conceptual_bridges` with `graphName` set to the learnings graph. Its `latentConceptsToDevelop` are the conceptual gateways: concepts in the memory with wide reach for the few links they have, the places where it connects most easily to other fields. Its `ideas` are a lead.
+
+c. **Write at most two ideas.** Each one:
+   - starts from a gateway concept and links it to one concept from outside the memory (a practice, a pattern, a tool, another field), both marked with `[[wikilinks]]`;
+   - is worded as something to explore, not as a fact ("Worth exploring: whether [[X]] could use [[Y]] to …");
+   - holds one idea, under 300 characters;
+   - repeats no idea already kept (step a), and builds on nothing this dream found wrong or outdated.
+
+   Two is the limit for one dream, and it is separate from the limit in step 4.
+
+d. **After approval** (each idea is approved or declined on its own in the plan):
+   - Save the approved ideas with `add_project_learnings`: the project name, `statements`, `types` set to `question` for each, `confirm: true`.
+   - Label them straight away: `update_statements` on the learnings graph with `statements` set to the same texts, `set: { addCategories: ["transcend", "dream-<date>"] }`, `confirm: true`. Until this call succeeds the ideas are stored as ordinary learnings and would be recalled as such. If it fails or reports fewer matches than ideas, say which ideas are not labelled.
+   - Retire the kept ideas the user agreed to drop: `update_statements` with `statements` set to their texts and `set: { addCategories: ["superseded", "dream-<date>"] }`, `confirm: true`.
+
+In the report, list the ideas added and retired apart from the learnings, and say they are read with `/infranodus-memory:recall transcend`.

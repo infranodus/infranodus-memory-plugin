@@ -175,6 +175,15 @@ plugin todo).
       rules of its own per state; further sets come by `gapDepth`, and each
       set becomes a question that is answered from the repo or saved as a
       `question` learning
+- [x] Transcend in dreaming (built 2026-11-11, not yet run): `/infranodus-memory:dream
+      transcend` adds a second part after consolidation: from the conceptual
+      gateways (`develop_conceptual_bridges`) it writes up to two ideas that
+      link the memory to an outside concept. They are saved as `question`
+      learnings with the category `transcend`, which the app keeps out of
+      `/recall` and out of `learnings/get` unless `transcend: "only"` is
+      sent; `/infranodus-memory:recall transcend` reads them. Kept ideas that
+      nothing linked to in 60 days are proposed for retiring. A normal dream
+      only offers it, in one line
 - [ ] Dreaming, later: remember the proposals the user declined, so the
       next dream doesn't make them again; a session-start notice when the graph has grown since
       the last `dream-<date>` (needs a count from `/recall`); which statements

@@ -913,6 +913,11 @@ def status_text(project, settings):
     return "\n".join(lines)
 
 
+# First word of /infranodus-memory:recall and :dream that asks for the ideas a
+# dream brought in from outside the memory (category `transcend`).
+TRANSCEND_WORD = "transcend"
+
+
 def recall_now(project, query):
     """/infranodus-memory:recall when a key is set: the same /recall call the
     first prompt makes, for the user's query, so recall also works when the
@@ -923,7 +928,14 @@ def recall_now(project, query):
         lines.append("%s Look it up with the InfraNodus tools." % no_key_line())
         return "\n".join(lines)
     query = (query or "").strip()
-    if query:
+    if query.split(" ", 1)[0].lower() == TRANSCEND_WORD:
+        # The API recall never returns transcend ideas, so there is nothing
+        # to add here: the skill reads them with the InfraNodus tools.
+        lines.append(
+            "Transcend ideas are not part of the recall through the API. "
+            "Read them with the InfraNodus tools."
+        )
+    elif query:
         try:
             status, body = post(
                 base, key, "/recall",
