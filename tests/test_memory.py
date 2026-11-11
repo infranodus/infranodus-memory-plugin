@@ -510,8 +510,9 @@ class MemoryUploadTest(MemoryHookTest):
         # The state is read before anything is chosen, from the insight clusters.
         self.assertLess(text.index("optimize_knowledge_base"), text.index("get_project_learnings` for"))
         self.assertIn('`optimize: "optimize"`', text)
-        for state in ("biased", "focused", "diversified", "dispersed"):
-            self.assertIn("**%s" % state, text, state)
+        # Which clusters to work on is InfraNodus's choice for the state of the
+        # graph; the skill has no rules of its own per state.
+        self.assertIn("Do not branch on it yourself", text)
         # Further sets come from the next gap depth, not from asking again.
         self.assertIn("`gapDepth: 1`", text)
         # A gap becomes a question; one the repo can't answer is saved as such.

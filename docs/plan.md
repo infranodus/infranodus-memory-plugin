@@ -170,10 +170,11 @@ plugin todo).
       weight of a learning. `infranodus-app`: `/recall` keeps up to 2 of its 5
       slots for `core` statements
       It starts from the state of the graph (`optimize_knowledge_base`, which
-      works on the insight clusters since MCP server 1.9.5): how many sets of
-      insight clusters it works on depends on the state (dispersed: three, by
-      `gapDepth`; diversified: none), and each set becomes a question that is
-      answered from the repo or saved as a `question` learning
+      works on the insight clusters since MCP server 1.9.5): the clusters are
+      the ones InfraNodus picks for the state of the graph, the skill has no
+      rules of its own per state; further sets come by `gapDepth`, and each
+      set becomes a question that is answered from the repo or saved as a
+      `question` learning
 - [ ] Dreaming, later: remember the proposals the user declined, so the
       next dream doesn't make them again; a session-start notice when the graph has grown since
       the last `dream-<date>` (needs a count from `/recall`); which statements

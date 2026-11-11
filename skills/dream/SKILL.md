@@ -23,17 +23,15 @@ A dream should leave the memory smaller or the same size, and more correct. It i
 
 ## What to do
 
-1. **Read the shape of the memory.** Call `optimize_knowledge_base` with `graphName` set to the learnings graph, `focus: "procedural"`, `optimize: "optimize"`, `gapDepth: 0`, `includeLatent: false`. Keep the whole report for step 4. Three things in it steer the dream:
-   - `state`: how the learnings are spread. **biased** (one area holds most of the influence), **focused**, **diversified** (balanced) or **dispersed** (clusters that don't meet).
-   - `dominant`: the cluster with the most influence.
-   - `insightClusters`: one line per set, each naming one to three clusters and their role. These are the clusters whose connection improves the structure most for this state. The first line is the set this call's `suggestions` are about.
+1. **Read the shape of the memory.** Call `optimize_knowledge_base` with `graphName` set to the learnings graph, `focus: "procedural"`, `optimize: "optimize"`, `gapDepth: 0`, `includeLatent: false`. Keep the whole report for step 4. Two things in it matter here:
+   - `state`: how the learnings are spread: **biased**, **focused**, **diversified** or **dispersed**. It is context for the user, with the report's `meaning`. Do not branch on it yourself.
+   - `insightClusters`: one line per set, each naming one to three clusters and their role. InfraNodus has already chosen them for this state, the same clusters the app highlights on the graph: the ones whose connection improves this structure most. The first line is the set this call's `suggestions` are about.
 
    If the graph has no learnings, say there is nothing to consolidate yet and stop.
 
 2. **Choose what to replay: at most 30 statements.** Call `get_project_learnings` for the project with no prompt, `order: "oldest"`, `uncheckedFor: 30` and `limit: 50`. It returns the overview (main concepts, areas, gaps) and the oldest learnings that no dream checked in the last 30 days, each with its `categories` and `createdAt`, plus `unchecked`: how many are left in the whole graph. Each dream starts where the last one stopped, so repeated dreams work through all of the memory.
 
    From those, take up to 30. When there are more than 30, take first:
-   - in a **biased** graph, statements in the `dominant` cluster: that is where repeats and outdated statements pile up;
    - statements about the overview's main concepts (a mistake there spreads furthest);
    - `location` and `trap` statements that name files, functions, commands or settings (they go out of date fastest);
    - then the oldest.
@@ -51,10 +49,9 @@ A dream should leave the memory smaller or the same size, and more correct. It i
 
    Statements that begin with "Confirmed again:" are deliberate: each one raises the weight of a learning that came up again. They are not duplicates. Leave them.
 
-4. **Ask what connects the insight clusters.** Work on the sets in `insightClusters` from step 1, as many as the state calls for:
-   - **dispersed:** up to three sets. The clusters exist but never meet, so connecting them is the main work of this dream. For the second and third set, call `optimize_knowledge_base` again with the same inputs and `gapDepth: 1`, then `2`, and use the first line of each report.
-   - **biased** or **focused:** one set, the first.
-   - **diversified:** none. The structure is balanced; say so and go to step 5.
+4. **Ask what connects the insight clusters.** Start with the first set in `insightClusters` from step 1. Which clusters are in it already follows from the state of the graph, so every state is handled the same way here.
+
+   When the limit below leaves room for more than one addition, go on to the next set: call `optimize_knowledge_base` again with the same inputs and `gapDepth: 1`, then `2`, and use the first line of each report. Three sets at most.
 
    For each set:
    - **Write the question** that connects its clusters, as a new agent would ask it: "does X depend on Y?", "what has to happen to Y after X changes?". The report's `suggestions` are a lead, not the answer. Ask only about what the clusters already hold. A dream brings in no new topics.
