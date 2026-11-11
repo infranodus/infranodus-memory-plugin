@@ -159,12 +159,14 @@ plugin todo).
 ## Step 6: later
 
 - [x] Consolidation ("dreaming"), built 2026-11-11, not yet run against a
-      live graph: `/infranodus-memory:dream` replays up to 30 learnings against
+      live graph: `/infranodus-memory:dream` replays up to 30 learnings (the oldest ones no
+      dream checked in 30 days: `get_project_learnings` with `order: "oldest"`
+      and `uncheckedFor`, new in the app and the MCP server) against
       the repo and their sessions' transcripts (a learning's `session-<id>`
       category names its transcript), then corrects, retires (`superseded`),
       bridges and promotes (`core`) through `update_statements` and
       `add_project_learnings` after one approval, and tags what it checked
-      `dream-<date>`. "Confirmed again" repeats are left alone: they are the
+      `dream-<date>`, so the next dream goes on from there. "Confirmed again" repeats are left alone: they are the
       weight of a learning. `infranodus-app`: `/recall` keeps up to 2 of its 5
       slots for `core` statements
 - [ ] Dreaming, later: a session-start notice when the graph has grown since

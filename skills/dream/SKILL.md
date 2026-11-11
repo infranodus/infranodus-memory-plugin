@@ -23,14 +23,18 @@ A dream should leave the memory smaller or the same size, and more correct. It i
 
 ## What to do
 
-1. **Choose what to replay: at most 30 statements.** Read the memory with `get_project_learnings` for the project: once with no prompt (the overview and the newest learnings), once each with `type: "trap"` and `type: "location"`, `limit: 50`. If the user named an area or concept (`$ARGUMENTS`), also call it with that as `entity` and `hops: 2`, and replay only what those calls return for it. Each learning comes with its `categories` and `createdAt`.
+1. **Choose what to replay: at most 30 statements.** Call `get_project_learnings` for the project with no prompt, `order: "oldest"`, `uncheckedFor: 30` and `limit: 50`. It returns the overview (main concepts, areas, gaps) and the oldest learnings that no dream checked in the last 30 days, each with its `categories` and `createdAt`, plus `unchecked`: how many are left in the whole graph. Each dream starts where the last one stopped, so repeated dreams work through all of the memory.
 
-   Leave out any statement with a `dream-<date>` category less than 30 days old: an earlier dream checked it. Among the rest, take first:
+   From those, take up to 30. When there are more than 30, take first:
    - statements about the overview's main concepts (a mistake there spreads furthest);
    - `location` and `trap` statements that name files, functions, commands or settings (they go out of date fastest);
-   - the oldest ones.
+   - then the oldest.
 
-   If the graph has no learnings, say there is nothing to consolidate yet and stop.
+   If the user named an area or concept (`$ARGUMENTS`), call `get_project_learnings` with that as `entity` and `hops: 2` instead, and replay what it returns, leaving out statements with a `dream-<date>` category less than 30 days old.
+
+   If the tool has no `order` input (an older InfraNodus server), call it with no prompt and `limit: 50`, and once more with `type: "trap"`, skip the statements with a recent `dream-<date>` category yourself, and tell the user in the report that only the newest learnings could be reached.
+
+   If the graph has no learnings, say there is nothing to consolidate yet and stop. If `unchecked` is 0, say every learning was checked in the last 30 days and stop, unless the user named an area.
 
 2. **Check each statement against the ground truth.** One verdict per statement:
    - **For anything the repo can show** (where something lives, what a function does, a command, a setting, a convention): look. Find each named `[[entity]]` with Glob and Grep and read the code. A file or symbol that no longer exists, or that no longer does what the statement says, makes the statement outdated or wrong.
@@ -57,8 +61,8 @@ A dream should leave the memory smaller or the same size, and more correct. It i
    - **Retire:** `update_statements`, one call per statement: `query` set to its text, `set: { addCategories: ["superseded", "dream-<date>"] }`. A superseded statement stays in the graph but is left out of recall, so retiring can be undone by removing the label. Never use `delete_statements` here.
    - **Add:** `add_project_learnings` with the project name, `statements`, `types`, `confirm: true`.
    - **Core:** `update_statements` with `statements` set to the texts that join and `set: { addCategories: ["core"] }`; another call with `set: { removeCategories: ["core"] }` for the ones that leave.
-   - **Record the check:** one `update_statements` call with `statements` set to every statement that held and `set: { addCategories: ["dream-<date>"] }`, so the next dream skips them.
+   - **Record the check:** one `update_statements` call with `statements` set to every statement that held or that you couldn't tell about, and `set: { addCategories: ["dream-<date>"] }`, so the next dream moves on to other statements instead of meeting these again.
 
    If a call reports fewer matches than expected, say which statement was not changed instead of trying another selector.
 
-7. **Report** in a few lines: checked, corrected, retired, added, core now. Then list each correction as before → after, because the earlier text of a corrected statement is kept nowhere else. Say that retired statements can be brought back by removing their `superseded` category in InfraNodus.
+7. **Report** in a few lines: checked, corrected, retired, added, core now, and how many learnings are still unchecked (`unchecked` minus the ones this dream recorded). Then list each correction as before → after, because the earlier text of a corrected statement is kept nowhere else. Say that retired statements can be brought back by removing their `superseded` category in InfraNodus.
