@@ -10,7 +10,7 @@ hooks/memory.py with it, in the same process.
     key.py clear-key          remove it
     key.py <memory.py action> [args]
                               hook-prompt, hook-flush, status, save, recall QUERY,
-                              forget-last, optimize, off, on: run that action
+                              forget-last, optimize, dream, off, on: run that action
                               with the key from INFRANODUS_API_KEY, else the
                               stored one
 

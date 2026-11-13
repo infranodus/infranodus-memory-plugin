@@ -464,7 +464,22 @@ class MemoryUploadTest(MemoryHookTest):
         self.assertIn("needs the key", self.expansion("forget-last", env=env))
         self.assertIn("learn-demo-repo", self.expansion("remember", "these rules", env=env))
         self.assertIn("list_graphs", self.expansion("optimize", env=env))
+        self.assertIn("list_graphs", self.expansion("dream", env=env))
         self.assertEqual(FakeRecall.calls, [])
+
+    def test_dream_is_told_the_graph_and_where_the_session_transcripts_are(self):
+        out = self.expansion("dream")
+        self.assertIn("learnings graph: learn-demo-repo", out)
+        self.assertIn("Session transcripts for this folder: none on this machine", out)
+        folder = os.path.join(
+            self.env["INFRANODUS_TRANSCRIPTS"],
+            "".join(c if c.isalnum() and c.isascii() else "-" for c in os.path.realpath(self.repo)),
+        )
+        os.makedirs(folder)
+        open(os.path.join(folder, "abc-123.jsonl"), "w").close()
+        out = self.expansion("dream")
+        self.assertIn("Session transcripts for this folder: 1 in %s (<session id>.jsonl)" % folder, out)
+        self.assertEqual(self.uploads(), [], "a dream uploads nothing by itself")
 
     def test_the_hook_ignores_other_commands_and_never_fails(self):
         self.assertIsNone(self.expansion("status", command_name="other-plugin:status"))
@@ -483,11 +498,53 @@ class MemoryUploadTest(MemoryHookTest):
         # dialog. Through a claude.ai connector that request never arrived and
         # the call timed out after a minute. The user asking to save is the
         # approval, and the confirmed call runs the same checks as the preview.
-        for name in ("save", "remember", "optimize"):
+        for name in ("save", "remember", "optimize", "dream"):
             with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
                 text = f.read()
             self.assertIn("confirm: true", text, name)
             self.assertNotIn("dry run", text.lower(), name)
+
+    def test_dream_works_from_the_state_of_the_graph_and_its_insight_clusters(self):
+        with open(os.path.join(ROOT, "skills", "dream", "SKILL.md"), encoding="utf-8") as f:
+            text = f.read()
+        # The state is read before anything is chosen, from the insight clusters.
+        self.assertLess(text.index("optimize_knowledge_base"), text.index("get_project_learnings` for"))
+        self.assertIn('`optimize: "optimize"`', text)
+        # Which clusters to work on is InfraNodus's choice for the state of the
+        # graph; the skill has no rules of its own per state.
+        self.assertIn("Do not branch on it yourself", text)
+        # Further sets come from the next gap depth, not from asking again.
+        self.assertIn("`gapDepth: 1`", text)
+        # A gap becomes a question; one the repo can't answer is saved as such.
+        self.assertIn("type `question`", text)
+        self.assertIn("Never answer a question on a guess", text)
+
+    def test_transcend_ideas_are_made_and_recalled_only_on_request(self):
+        def skill(name):
+            with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
+                return f.read()
+        dream, recall = skill("dream"), skill("recall")
+        # Looking outward is a part of its own, entered only by request.
+        outward = dream[dream.index("## Looking outward"):]
+        self.assertIn("Only when asked", outward)
+        self.assertIn("develop_conceptual_bridges", outward)
+        self.assertNotIn("develop_conceptual_bridges", dream[:dream.index("## Looking outward")])
+        self.assertIn("at most two ideas", outward)
+        # Saved, then labelled so that recall leaves them out.
+        self.assertIn('addCategories: ["transcend", "dream-<date>"]', outward)
+        self.assertIn('`transcend: "only"`', outward)
+        # A normal dream only offers it.
+        self.assertIn("/infranodus-memory:dream transcend", dream[:dream.index("## Looking outward")])
+        # Recall gives them only when asked, and keeps them out otherwise.
+        self.assertIn('`transcend: "only"`', recall)
+        self.assertIn("leave out any statement whose categories include `transcend`", recall)
+
+    def test_recall_transcend_makes_no_api_recall(self):
+        before = len([c for c in FakeRecall.calls if c["path"].endswith("/recall")])
+        out = self.expansion("recall", "transcend webpack")
+        self.assertEqual(len([c for c in FakeRecall.calls if c["path"].endswith("/recall")]), before)
+        self.assertIn("Transcend ideas are not part of the recall through the API", out)
+        self.assertIn("learn-demo-repo", out)
 
     def test_plugin_files_hold_no_key_handling_of_their_own(self):
         """What Claude Code loads must not read a key from the machine or

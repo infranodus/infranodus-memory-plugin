@@ -1,7 +1,7 @@
 ---
 name: recall
-description: GraphRAG recall from InfraNodus Graph Memory. Look something up in the project's memory graph mid-session by following its links, instead of matching text. For a concept ("what do we know about webpack?", "what is X connected to?") it returns what the concept is connected to, by hop distance, with the learnings on those links; for a question or task it returns the most relevant learnings, including ones linked through an intermediate concept. Use when the user asks what memory or the learnings say about something, or before working on an area the memory may cover.
-argument-hint: "<concept or question>"
+description: GraphRAG recall from InfraNodus Graph Memory. Look something up in the project's memory graph mid-session by following its links, instead of matching text. For a concept ("what do we know about webpack?", "what is X connected to?") it returns what the concept is connected to, by hop distance, with the learnings on those links; for a question or task it returns the most relevant learnings, including ones linked through an intermediate concept. With `transcend` as the first word it lists the transcend ideas instead: unverified ideas a dream brought in from outside the memory, which are never recalled otherwise. Use when the user asks what memory or the learnings say about something, or before working on an area the memory may cover.
+argument-hint: "[transcend] <concept or question>"
 ---
 
 ## Memory here
@@ -13,6 +13,11 @@ If no `[infranodus-memory]` block is in your context, the hook did not run. In C
 ## What to do
 
 The user is asking about: $ARGUMENTS (if empty, use what the user asked in the conversation).
+
+**Transcend ideas.** A dream can bring in ideas from outside the memory. They carry the category `transcend`, are checked against nothing, and are left out of every recall unless the user asks for them. They asked when the arguments begin with `transcend`, or when they ask in their own words for the transcend ideas or the ideas from outside.
+
+- **Asked for:** with the InfraNodus MCP tools, call `get_project_learnings` with the project name and `transcend: "only"`. Add `entity` and `hops: 2` when a concept follows the word `transcend`, or `prompt` when a question does. Present what comes back under "Ideas to explore (unverified)", quoted as stored, and never as something the project has established. If there are none, say so and that `/infranodus-memory:dream transcend` produces them. Then stop: do not add learnings to this answer. Without the tools, say "Connect the InfraNodus connector to read the transcend ideas." and stop.
+- **Not asked for:** follow the steps below, and leave out any statement whose categories include `transcend`, with the concepts reached only through such a statement. `get_node_neighborhood` walks the whole graph, so it can return them.
 
 1. **With InfraNodus MCP tools available** (from any InfraNodus server or connector; with several, the one for infranodus.com):
    - **Pick the graphs.** The project's learnings graph, plus a topic graph when the question is about that topic (a client, company, case). Take them from the block; without a list there, call `list_graphs` and take the memory graphs: `learn-<project>` for the project name from the block; without a block, the name of the git remote `origin` (the last part of its URL, without `.git`), else the name of the repository's folder, and `memory-<topic>`. If there are no memory graphs, say there is no memory here yet and stop.

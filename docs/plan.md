@@ -158,6 +158,36 @@ plugin todo).
 
 ## Step 6: later
 
+- [x] Consolidation ("dreaming"), built 2026-11-11, not yet run against a
+      live graph: `/infranodus-memory:dream` replays up to 30 learnings (the oldest ones no
+      dream checked in 30 days: `get_project_learnings` with `order: "oldest"`
+      and `uncheckedFor`, new in the app and the MCP server) against
+      the repo and their sessions' transcripts (a learning's `session-<id>`
+      category names its transcript), then corrects, retires (`superseded`),
+      bridges and promotes (`core`) through `update_statements` and
+      `add_project_learnings` after one approval, and tags what it checked
+      `dream-<date>`, so the next dream goes on from there. "Confirmed again" repeats are left alone: they are the
+      weight of a learning. `infranodus-app`: `/recall` keeps up to 2 of its 5
+      slots for `core` statements
+      It starts from the state of the graph (`optimize_knowledge_base`, which
+      works on the insight clusters since MCP server 1.9.5): the clusters are
+      the ones InfraNodus picks for the state of the graph, the skill has no
+      rules of its own per state; further sets come by `gapDepth`, and each
+      set becomes a question that is answered from the repo or saved as a
+      `question` learning
+- [x] Transcend in dreaming (built 2026-11-11, not yet run): `/infranodus-memory:dream
+      transcend` adds a second part after consolidation: from the conceptual
+      gateways (`develop_conceptual_bridges`) it writes up to two ideas that
+      link the memory to an outside concept. They are saved as `question`
+      learnings with the category `transcend`, which the app keeps out of
+      `/recall` and out of `learnings/get` unless `transcend: "only"` is
+      sent; `/infranodus-memory:recall transcend` reads them. Kept ideas that
+      nothing linked to in 60 days are proposed for retiring. A normal dream
+      only offers it, in one line
+- [ ] Dreaming, later: remember the proposals the user declined, so the
+      next dream doesn't make them again; a session-start notice when the graph has grown since
+      the last `dream-<date>` (needs a count from `/recall`); which statements
+      recall returned, as a signal for what to replay and what to retire
 - [ ] Phase 4: personal memory; device login replacing the API key
 - [~] Phase 5: adapters for Codex and Grok Build built 2026-11-03 (manifests, payload normalization, Codex rollout parser, key without plugin settings); Cursor and installers open
 - [ ] Optional: the analytical-layer and importer edits from the comparison doc
