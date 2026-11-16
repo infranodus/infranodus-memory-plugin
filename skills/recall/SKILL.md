@@ -14,7 +14,7 @@ If no `[infranodus-memory]` block is in your context, the hook did not run. In C
 
 The user is asking about: $ARGUMENTS (if empty, use what the user asked in the conversation).
 
-**Transcend ideas.** A dream can bring in ideas from outside the memory. They carry the category `transcend`, are checked against nothing, and are left out of every recall unless the user asks for them. They asked when the arguments begin with `transcend`, or when they ask in their own words for the transcend ideas or the ideas from outside.
+**Transcend ideas.** A dream can bring in ideas from outside the memory. They carry the category `transcend`, are checked against nothing, and are left out of every recall unless the user asks for them. They are asked for when the arguments begin with `transcend`, or when they ask in their own words for the transcend ideas or the ideas from outside.
 
 - **Asked for:** with the InfraNodus MCP tools, call `get_project_learnings` with the project name and `transcend: "only"`. Add `entity` and `hops: 2` when a concept follows the word `transcend`, or `prompt` when a question does. Present what comes back under "Ideas to explore (unverified)", quoted as stored, and never as something the project has established. If there are none, say so and that `/infranodus-memory:dream transcend` produces them. Then stop: do not add learnings to this answer. Without the tools, say "Connect the InfraNodus connector to read the transcend ideas." and stop.
 - **Not asked for:** follow the steps below, and leave out any statement whose categories include `transcend`, with the concepts reached only through such a statement. `get_node_neighborhood` walks the whole graph, so it can return them.
